@@ -1,5 +1,11 @@
 # EDMS DataBridge
 
+[![CI](https://img.shields.io/github/actions/workflow/status/AshKapow/EDMS-DataBridge/ci.yml?branch=main&label=CI)](https://github.com/AshKapow/EDMS-DataBridge/actions/workflows/ci.yml)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Platform: Windows](https://img.shields.io/badge/platform-windows-0078D6?logo=windows&logoColor=white)](https://github.com/AshKapow/EDMS-DataBridge)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![License: Custom](https://img.shields.io/badge/license-custom-lightgrey)](LICENSE)
+
 A small Windows desktop tool that lets a non-technical user upload a JSON
 export (e.g. from Ambunet) and get back a clean, formatted Excel file.
 
