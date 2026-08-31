@@ -4,13 +4,14 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Platform: Windows](https://img.shields.io/badge/platform-windows-0078D6?logo=windows&logoColor=white)](https://github.com/AshKapow/EDMS-DataBridge)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
-[![License: Custom](https://img.shields.io/badge/license-custom-lightgrey)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 A small Windows desktop tool that lets a non-technical user upload a JSON
 export (e.g. from Ambunet) and get back a clean, formatted Excel file.
 
-Built for EDMS by Ashley Powell (Ash Kapow on GitHub). See [LICENSE](LICENSE)
-for usage terms.
+Built primarily for EDMS (Emergency Medical Doctor Service) by Ashley
+Powell (Ash Kapow on GitHub), and released as open source (MIT license —
+see [LICENSE](LICENSE)) for anyone else who runs into the same problem.
 
 ## Background
 
