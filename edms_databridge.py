@@ -28,6 +28,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import pandas as pd
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
 
 APP_TITLE = "EDMS DataBridge"
@@ -54,6 +55,30 @@ def load_json(filepath: str):
     """Load and parse the uploaded JSON file. Raises on invalid JSON."""
     with open(filepath, "r", encoding="utf-8-sig") as f:
         return json.load(f)
+
+
+def parse_dnd_filepaths(data: str) -> list:
+    """
+    Split a tkinterdnd2 <<Drop>> event's data string into individual file
+    paths. Paths containing spaces arrive wrapped in {curly braces};
+    others are just space-separated.
+    """
+    paths = []
+    i, n = 0, len(data)
+    while i < n:
+        if data[i].isspace():
+            i += 1
+        elif data[i] == "{":
+            end = data.index("}", i)
+            paths.append(data[i + 1:end])
+            i = end + 1
+        else:
+            end = i
+            while end < n and not data[end].isspace():
+                end += 1
+            paths.append(data[i:end])
+            i = end
+    return paths
 
 
 def process_data(data):
@@ -105,12 +130,16 @@ def save_as_excel(sheets: dict, output_path: str):
             df.to_excel(writer, sheet_name=sheet_name, index=False)
 
 
-class App(tk.Tk):
+class App(TkinterDnD.Tk):
+    WINDOW_WIDTH = 480
+
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("480x320")
         self.resizable(False, False)
+
+        self.drop_target_register(DND_FILES)
+        self.dnd_bind("<<Drop>>", self.handle_drop)
 
         icon_path = resource_path("assets/logo.ico")
         if icon_path.exists():
@@ -131,7 +160,7 @@ class App(tk.Tk):
 
         ttk.Label(
             self,
-            text="Click below, choose the JSON file from Ambunet,\n"
+            text="Click below, or drag a JSON file onto this window,\n"
                  "and this will create a formatted Excel file next to it.",
             justify="center",
         ).pack(pady=(0, 20))
@@ -144,7 +173,9 @@ class App(tk.Tk):
             command=self.handle_upload,
         ).pack()
 
-        self.status_label = ttk.Label(self, text="", foreground="gray20")
+        self.status_label = ttk.Label(
+            self, text="", foreground="gray20", wraplength=self.WINDOW_WIDTH - 40
+        )
         self.status_label.pack(pady=(20, 0))
 
         ttk.Label(
@@ -154,6 +185,20 @@ class App(tk.Tk):
             foreground="gray50",
         ).pack(side="bottom", pady=(0, 10))
 
+        self._fit_window_to_content()
+
+    def _set_status(self, text):
+        """Update the status text and resize the window's height to fit it -
+        a fixed height would silently clip content (e.g. a long saved-file
+        path, or the footer) whenever a message needs more room than
+        whatever was guessed at design time."""
+        self.status_label.config(text=text)
+        self._fit_window_to_content()
+
+    def _fit_window_to_content(self):
+        self.update_idletasks()
+        self.geometry(f"{self.WINDOW_WIDTH}x{self.winfo_reqheight()}")
+
     def handle_upload(self):
         filepath = filedialog.askopenfilename(
             title="Select the Ambunet JSON export",
@@ -161,9 +206,16 @@ class App(tk.Tk):
         )
         if not filepath:
             return
+        self.process_file(filepath)
 
-        self.status_label.config(text="Processing...")
-        self.update_idletasks()
+    def handle_drop(self, event):
+        paths = parse_dnd_filepaths(event.data)
+        if not paths:
+            return
+        self.process_file(paths[0])
+
+    def process_file(self, filepath):
+        self._set_status("Processing...")
 
         try:
             data = load_json(filepath)
@@ -180,26 +232,26 @@ class App(tk.Tk):
                 filetypes=[("Excel file", "*.xlsx")],
             )
             if not output_path:
-                self.status_label.config(text="Cancelled.")
+                self._set_status("Cancelled.")
                 return
 
             save_as_excel(sheets, output_path)
 
-            self.status_label.config(text=f"Done! Saved to:\n{output_path}")
+            self._set_status(f"Done! Saved to:\n{output_path}")
             messagebox.showinfo(
                 APP_TITLE,
                 f"Success! Your formatted file is ready:\n\n{output_path}",
             )
 
         except json.JSONDecodeError:
-            self.status_label.config(text="")
+            self._set_status("")
             messagebox.showerror(
                 APP_TITLE,
                 "That file doesn't look like valid JSON.\n"
                 "Please double check the file you uploaded.",
             )
         except Exception as e:
-            self.status_label.config(text="")
+            self._set_status("")
             messagebox.showerror(
                 APP_TITLE,
                 f"Something went wrong:\n\n{e}",
