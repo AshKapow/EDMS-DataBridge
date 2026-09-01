@@ -104,10 +104,12 @@ the cost for wider distribution.
 
 ## Branding
 
-`assets/logo.png` (in-app header) and `assets/logo.ico` (title bar /
-taskbar / exe icon) are the official EDMS mark, generated from the source
-files EDMS provided — see [assets/README.md](assets/README.md) for
-provenance and specs if they ever need regenerating at a different size.
+The in-app header shows the official EDMS "ED" mark (`assets/logo.png`).
+The title bar, taskbar, and the built exe's file icon use a different,
+DataBridge-specific mark (`assets/logo.ico`): a single bold document
+icon, representing the file this tool produces — see
+[assets/README.md](assets/README.md) for provenance and generation
+details.
 
 ## Project structure
 
