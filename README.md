@@ -6,8 +6,9 @@
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
-A small Windows desktop tool that lets a non-technical user upload a JSON
-export (e.g. from Ambunet) and get back a clean, formatted Excel file.
+A small Windows desktop tool that lets a non-technical user upload (or
+drag and drop) a JSON export (e.g. from Ambunet) and get back a clean,
+formatted Excel file.
 
 Built primarily for EDMS (Emergency Doctors Medical Service) by Ashley
 Powell (Ash Kapow on GitHub), and released as open source (MIT license —
@@ -50,7 +51,9 @@ via PyInstaller (`--onefile --windowed`), chosen over C#/.NET or Electron
 for speed of iteration given the author's background, and because a single
 unsigned `.exe` is enough for an internal tool — no installer needed.
 
-Output format is Excel (`.xlsx`), one sheet per top-level entity type.
+Output format is currently Excel (`.xlsx`), one sheet per top-level
+entity type — but this was an early default, never a confirmed
+requirement. See open question 2 below.
 
 ## Setup (dev machine)
 
@@ -71,9 +74,10 @@ python edms_databridge.py
 
 ## Testing & linting
 
-Unit tests cover `load_json()` and `process_data()` — the core, GUI-free
-logic. The Tkinter GUI itself is exercised manually, not by automated
-tests.
+Unit tests cover the core, GUI-free logic: JSON loading/parsing, the
+generic flatten (`process_data()`), asset-path resolution/logo loading,
+and drag-and-drop path parsing. The Tkinter GUI itself (widgets, dialogs,
+actual drag-and-drop) is exercised manually, not by automated tests.
 
 ```
 pytest
@@ -111,6 +115,12 @@ icon, representing the file this tool produces — see
 [assets/README.md](assets/README.md) for provenance and generation
 details.
 
+## Contributing
+
+`main` is protected: changes go through a pull request (with CI passing
+and at least one approval) rather than a direct push, even for the repo
+owner.
+
 ## Project structure
 
 ```
@@ -124,6 +134,7 @@ edms-export-translater/
 ├── build.bat              # builds the standalone exe
 ├── version_info.txt       # Windows file-properties metadata for the exe
 ├── .github/workflows/     # CI: lint, test, and build-smoke-test on push/PR
+├── .github/ISSUE_TEMPLATE/ # bug report / feature request forms
 ├── .gitignore
 ├── LICENSE
 └── README.md
@@ -142,8 +153,5 @@ edms-export-translater/
    on first run. Is a code-signing certificate worth it, or is "click More
    info -> Run anyway" an acceptable one-time instruction for internal
    staff?
-4. **Drag-and-drop** — not included yet (Tkinter needs the extra
-   `tkinterdnd2` dependency for this). Worth adding once the core logic is
-   settled?
-5. **Clean-machine testing** — the built `.exe` hasn't been tested on a
+4. **Clean-machine testing** — the built `.exe` hasn't been tested on a
    machine without dev tools/antivirus false-positive checks yet.

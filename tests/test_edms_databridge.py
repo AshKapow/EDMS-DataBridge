@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from edms_databridge import load_json, load_logo_image, process_data, resource_path
+from edms_databridge import (
+    load_json,
+    load_logo_image,
+    parse_dnd_filepaths,
+    process_data,
+    resource_path,
+)
 
 
 def test_load_json_valid(tmp_path):
@@ -102,3 +108,24 @@ def test_load_logo_image_loads_the_real_asset():
         assert isinstance(image, tk.PhotoImage)
     finally:
         root.destroy()
+
+
+def test_parse_dnd_filepaths_single_simple_path():
+    assert parse_dnd_filepaths("C:/Users/ashley/export.json") == [
+        "C:/Users/ashley/export.json"
+    ]
+
+
+def test_parse_dnd_filepaths_path_with_spaces_in_braces():
+    assert parse_dnd_filepaths("{C:/Users/ashley/My Exports/export.json}") == [
+        "C:/Users/ashley/My Exports/export.json"
+    ]
+
+
+def test_parse_dnd_filepaths_multiple_paths():
+    data = "{C:/My Exports/a.json} C:/b.json"
+    assert parse_dnd_filepaths(data) == ["C:/My Exports/a.json", "C:/b.json"]
+
+
+def test_parse_dnd_filepaths_empty_string():
+    assert parse_dnd_filepaths("") == []
