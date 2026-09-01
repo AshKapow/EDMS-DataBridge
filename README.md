@@ -117,9 +117,11 @@ details.
 
 ## Contributing
 
-`main` is protected: changes go through a pull request (with CI passing
-and at least one approval) rather than a direct push, even for the repo
-owner.
+`main` is protected: changes go through a pull request with CI passing,
+rather than a direct push, even for the repo owner. Required approvals
+is set to 0 rather than 1, since GitHub never allows a PR author to
+approve their own PR — with a single collaborator, requiring 1 would
+make every PR permanently unmergeable without an admin override.
 
 ## Project structure
 
