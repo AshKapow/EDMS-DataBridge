@@ -1,8 +1,10 @@
 import json
+import tkinter as tk
+from pathlib import Path
 
 import pytest
 
-from edms_databridge import load_json, process_data
+from edms_databridge import load_json, load_logo_image, process_data, resource_path
 
 
 def test_load_json_valid(tmp_path):
@@ -76,3 +78,27 @@ def test_process_data_truncates_long_sheet_names_to_excel_limit():
 def test_process_data_rejects_non_list_non_dict_input(bad_data):
     with pytest.raises(ValueError):
         process_data(bad_data)
+
+
+def test_resource_path_resolves_relative_to_script_dir_in_dev_mode():
+    path = resource_path("assets/logo.png")
+    assert path == Path(__file__).parent.parent / "assets" / "logo.png"
+
+
+def test_load_logo_image_returns_none_when_file_missing(monkeypatch):
+    monkeypatch.setattr(
+        "edms_databridge.resource_path", lambda relative_path: Path("no/such/file.png")
+    )
+    assert load_logo_image() is None
+
+
+def test_load_logo_image_loads_the_real_asset():
+    # load_logo_image() is only ever called after App's Tk root exists (see
+    # App.__init__), so a root is created here to match that precondition.
+    root = tk.Tk()
+    try:
+        image = load_logo_image()
+        assert image is not None
+        assert isinstance(image, tk.PhotoImage)
+    finally:
+        root.destroy()

@@ -14,23 +14,40 @@ splitting patients/shifts/HR records into separate sheets, renaming
 columns, converting date formats, etc).
 
 --- Build into a standalone .exe ---
-1. pip install pyinstaller pandas openpyxl
-2. pyinstaller --onefile --windowed --name "EDMSDataBridge" edms_databridge.py
-3. The .exe will be in the generated dist/ folder. That single file is what
-   you hand to the non-technical user - no installer, no Python needed.
+Run build.bat (see that file for the exact pyinstaller command/flags).
+The .exe will be in the generated dist/ folder. That single file is what
+you hand to the non-technical user - no installer, no Python needed.
 """
 
 import json
+import sys
 import traceback
 from pathlib import Path
 
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 
 import pandas as pd
 
 
 APP_TITLE = "EDMS DataBridge"
+
+
+def resource_path(relative_path: str) -> Path:
+    """Resolve a bundled asset path, in both dev mode and a PyInstaller onefile build."""
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return base_path / relative_path
+
+
+def load_logo_image():
+    """Load assets/logo.png if it exists. Returns None if it's missing or unreadable."""
+    logo_path = resource_path("assets/logo.png")
+    if not logo_path.exists():
+        return None
+    try:
+        return tk.PhotoImage(file=str(logo_path))
+    except tk.TclError:
+        return None
 
 
 def load_json(filepath: str):
@@ -92,37 +109,49 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("480x290")
+        self.geometry("480x320")
         self.resizable(False, False)
 
-        tk.Label(
-            self, text=APP_TITLE, font=("Segoe UI", 16, "bold")
-        ).pack(pady=(24, 8))
+        icon_path = resource_path("assets/logo.ico")
+        if icon_path.exists():
+            self.iconbitmap(str(icon_path))
 
-        tk.Label(
+        ttk.Style(self).configure("Upload.TButton", font=("Segoe UI", 12))
+
+        self._logo_image = load_logo_image()  # kept as an attribute so Tk doesn't GC it
+        if self._logo_image is not None:
+            ttk.Label(self, image=self._logo_image).pack(pady=(20, 4))
+            title_pady = (0, 8)
+        else:
+            title_pady = (24, 8)
+
+        ttk.Label(
+            self, text=APP_TITLE, font=("Segoe UI", 16, "bold")
+        ).pack(pady=title_pady)
+
+        ttk.Label(
             self,
             text="Click below, choose the JSON file from Ambunet,\n"
                  "and this will create a formatted Excel file next to it.",
             justify="center",
         ).pack(pady=(0, 20))
 
-        tk.Button(
+        ttk.Button(
             self,
             text="Upload JSON File",
-            font=("Segoe UI", 12),
-            width=22,
-            height=2,
+            padding=(20, 12),
+            style="Upload.TButton",
             command=self.handle_upload,
         ).pack()
 
-        self.status_label = tk.Label(self, text="", fg="gray20")
+        self.status_label = ttk.Label(self, text="", foreground="gray20")
         self.status_label.pack(pady=(20, 0))
 
-        tk.Label(
+        ttk.Label(
             self,
             text="Built for EDMS by Ashley Powell (Ash Kapow)",
             font=("Segoe UI", 8),
-            fg="gray50",
+            foreground="gray50",
         ).pack(side="bottom", pady=(0, 10))
 
     def handle_upload(self):
