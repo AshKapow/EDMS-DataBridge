@@ -126,7 +126,6 @@ make every PR permanently unmergeable without an admin override.
 ## Project structure
 
 ```
-edms-export-translater/
 ├── edms_databridge.py     # main app (GUI + processing logic)
 ├── assets/                # optional logo.png / logo.ico (see assets/README.md)
 ├── tests/                 # pytest unit tests for the processing logic
