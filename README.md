@@ -91,9 +91,11 @@ always downloadable without needing a local Python setup.
 build.bat
 ```
 
-This produces `dist\EDMSDataBridge.exe` — a single file with no
-dependencies. That's the file to hand to end users. They just double-click
-it, no Python install needed on their machine.
+`build.bat` auto-activates `.venv` if it exists next to the script, so
+just run it after the dev setup above. It produces
+`dist\EDMSDataBridge.exe` — a single file with no dependencies. That's
+the file to hand to end users. They just double-click it, no Python
+install needed on their machine.
 
 Note: the exe is unsigned, so Windows SmartScreen will show a warning on
 first run ("Windows protected your PC"). Users click "More info" → "Run
