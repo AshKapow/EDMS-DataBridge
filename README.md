@@ -1,5 +1,7 @@
 # EDMS DataBridge
 
+![EDMS DataBridge](assets/banner.png)
+
 [![CI](https://github.com/AshKapow/EDMS-DataBridge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/AshKapow/EDMS-DataBridge/actions/workflows/ci.yml)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![Platform: Windows](https://img.shields.io/badge/platform-windows-0078D6?logo=windows&logoColor=white)](https://github.com/AshKapow/EDMS-DataBridge)
@@ -9,7 +11,7 @@
 A small Windows desktop tool that lets a non-technical user upload a JSON
 export (e.g. from Ambunet) and get back a clean, formatted Excel file.
 
-Built primarily for EDMS (Emergency Medical Doctor Service) by Ashley
+Built primarily for EDMS (Emergency Doctors Medical Service) by Ashley
 Powell (Ash Kapow on GitHub), and released as open source (MIT license —
 see [LICENSE](LICENSE)) for anyone else who runs into the same problem.
 
@@ -100,16 +102,25 @@ first run ("Windows protected your PC"). Users click "More info" → "Run
 anyway". A code-signing certificate would remove this, if it becomes worth
 the cost for wider distribution.
 
+## Branding
+
+`assets/logo.png` (in-app header) and `assets/logo.ico` (title bar /
+taskbar / exe icon) are the official EDMS mark, generated from the source
+files EDMS provided — see [assets/README.md](assets/README.md) for
+provenance and specs if they ever need regenerating at a different size.
+
 ## Project structure
 
 ```
 edms-export-translater/
 ├── edms_databridge.py     # main app (GUI + processing logic)
+├── assets/                # optional logo.png / logo.ico (see assets/README.md)
 ├── tests/                 # pytest unit tests for the processing logic
 ├── requirements.txt       # runtime deps (bundled into the exe)
 ├── requirements-dev.txt   # runtime deps + pytest/ruff for local dev & CI
 ├── pyproject.toml         # pytest and ruff config
 ├── build.bat              # builds the standalone exe
+├── version_info.txt       # Windows file-properties metadata for the exe
 ├── .github/workflows/     # CI: lint, test, and build-smoke-test on push/PR
 ├── .gitignore
 ├── LICENSE
