@@ -1,0 +1,57 @@
+name: Bug report
+description: Something isn't working as expected
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug!
+
+        **Please don't attach real Ambunet export files, screenshots, or error
+        messages containing real patient/staff data.** Describe the JSON's
+        shape instead (e.g. "a list of objects with a nested `visits`
+        array"), or reproduce it with a small made-up example using fake
+        data.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: false
+
+  - type: input
+    id: source
+    attributes:
+      label: Where did you get EDMS DataBridge from?
+      placeholder: e.g. exe downloaded from a GitHub Actions run, or built locally from source
+    validations:
+      required: false
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message (if any) - redact any real data first
+      render: shell
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Windows version
+      options:
+        - Windows 11
+        - Windows 10
+        - Other / not sure
+    validations:
+      required: false
