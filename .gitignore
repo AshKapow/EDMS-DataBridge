@@ -9,3 +9,9 @@ venv/
 *.xlsx
 *.json
 !sample_data/*.json
+
+# Real/demo Ambunet export data - local dev only, never commit (PII-shaped
+# even in demo form: patient care records, DBS checks, incident logs, etc).
+# Already caught by the blanket *.json rule above; explicit here too as
+# defense-in-depth so it stays excluded even if that rule ever changes.
+/ambunet-demo-export/
