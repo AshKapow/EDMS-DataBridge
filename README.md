@@ -9,8 +9,8 @@
 A small Windows desktop tool that lets a non-technical user upload a JSON
 export (e.g. from Ambunet) and get back a clean, formatted Excel file.
 
-Built primarily for EDMS (Emergency Doctors Medical Service) by Ashley
-Powell (Ash Kapow on GitHub), and released as open source (MIT license —
+Built primarily for EDMS (Emergency Doctors Medical Service) by Ash Kapow,
+and released as open source (MIT license —
 see [LICENSE](LICENSE)) for anyone else who runs into the same problem.
 
 ## Background

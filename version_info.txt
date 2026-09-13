@@ -21,7 +21,7 @@ VSVersionInfo(
         StringStruct(u'FileDescription', u'EDMS DataBridge'),
         StringStruct(u'FileVersion', u'0.1.0'),
         StringStruct(u'InternalName', u'EDMSDataBridge'),
-        StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Ashley Powell (Ash Kapow)'),
+        StringStruct(u'LegalCopyright', u'Copyright (c) 2026 Ash Kapow'),
         StringStruct(u'OriginalFilename', u'EDMSDataBridge.exe'),
         StringStruct(u'ProductName', u'EDMS DataBridge'),
         StringStruct(u'ProductVersion', u'0.1.0')])

@@ -1,7 +1,7 @@
 """
 EDMS DataBridge
 -----------------------
-Author: Ashley Powell (GitHub: Ash Kapow)
+Author: Ash Kapow
 Built for: EDMS
 
 A simple Windows GUI tool: user uploads a JSON export (e.g. from Ambunet),
@@ -149,7 +149,7 @@ class App(tk.Tk):
 
         ttk.Label(
             self,
-            text="Built for EDMS by Ashley Powell (Ash Kapow)",
+            text="Built for EDMS by Ash Kapow",
             font=("Segoe UI", 8),
             foreground="gray50",
         ).pack(side="bottom", pady=(0, 10))
