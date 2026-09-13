@@ -1,17 +1,21 @@
 """
 EDMS DataBridge
 -----------------------
-Author: Ashley Powell (GitHub: Ash Kapow)
+Author: Ash Kapow
 Built for: EDMS
 
-A simple Windows GUI tool: user uploads a JSON export (e.g. from Ambunet),
-the app converts it into a clean Excel file they can actually use.
+A simple Windows GUI tool: user uploads a JSON export (e.g. from Ambunet)
+- a zip, a folder, or a single JSON file - and the app converts it into a
+clean Excel file they can actually use.
 
-Currently uses a GENERIC flattening approach since we don't yet know the
-real structure of Ambunet's export. Once you have a sample export, replace
-the `process_data()` function with logic specific to that schema (e.g.
-splitting patients/shifts/HR records into separate sheets, renaming
-columns, converting date formats, etc).
+Ambunet's real export is a zip (containing a folder of one *.json file
+per entity, e.g. employees.json, incidents.json, epcrs.json) in MongoDB
+Extended JSON format (IDs as {"$oid": ...}, dates as {"$date": ...}, etc).
+`clean_data()` unwraps that into plain values and drops known-sensitive
+fields (e.g. password hashes) before `process_data()` flattens each
+entity into its own sheet. `process_data()` is still a GENERIC flatten
+per entity, not bespoke per-entity column mapping/renaming - see the
+README's open questions for what's still deliberately deferred.
 
 --- Build into a standalone .exe ---
 Run build.bat (see that file for the exact pyinstaller command/flags).
@@ -22,6 +26,8 @@ you hand to the non-technical user - no installer, no Python needed.
 import json
 import sys
 import traceback
+import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import tkinter as tk
@@ -51,10 +57,123 @@ def load_logo_image():
         return None
 
 
+def _decode_json_bytes(raw_bytes: bytes) -> str:
+    """
+    Decode a JSON file's raw bytes, tolerating mixed encodings across a
+    118-file export. utf-8-sig is standard for JSON, but some files in
+    the real Ambunet export turned out to be Windows-1252 (e.g. a "£" in
+    an expense/invoice field decodes fine in cp1252, not utf-8). latin-1
+    never raises - it's the last-resort fallback since a wrong-but-parsed
+    character beats crashing the whole 118-file batch over one file.
+    """
+    for encoding in ("utf-8-sig", "cp1252"):
+        try:
+            return raw_bytes.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw_bytes.decode("latin-1")
+
+
 def load_json(filepath: str):
     """Load and parse the uploaded JSON file. Raises on invalid JSON."""
-    with open(filepath, "r", encoding="utf-8-sig") as f:
-        return json.load(f)
+    with open(filepath, "rb") as f:
+        return json.loads(_decode_json_bytes(f.read()))
+
+
+def load_entity_folder(folder_path):
+    """
+    Load every *.json file found in a folder (searched recursively, since
+    depending how someone extracts Ambunet's zip, the inner folder may or
+    may not still be there) into one dict keyed by filename - e.g.
+    employees.json -> "employees" -> the parsed list of employee records.
+
+    Returns (data, skipped): a single unparseable file doesn't abort the
+    whole batch (this is a 100+ file export - one bad file shouldn't cost
+    you the other 117). skipped is a list of (filename, error message)
+    for anything that couldn't be read, so it's still visible afterward.
+    """
+    folder_path = Path(folder_path)
+    data, skipped = {}, []
+    for json_file in sorted(folder_path.rglob("*.json")):
+        try:
+            data[json_file.stem] = load_json(str(json_file))
+        except json.JSONDecodeError as e:
+            skipped.append((json_file.name, str(e)))
+    return data, skipped
+
+
+def load_entity_zip(zip_path):
+    """Same as load_entity_folder(), but reads directly from a zip archive
+    without extracting it first - matches Ambunet's real export format
+    (a zip containing one folder of *.json files, one per entity)."""
+    data, skipped = {}, []
+    with zipfile.ZipFile(zip_path) as zf:
+        for name in zf.namelist():
+            if name.lower().endswith(".json"):
+                try:
+                    text = _decode_json_bytes(zf.read(name))
+                    data[Path(name).stem] = json.loads(text)
+                except json.JSONDecodeError as e:
+                    skipped.append((Path(name).name, str(e)))
+    return data, skipped
+
+
+SENSITIVE_FIELD_NAMES = {"password", "passwordhash", "secret", "apikey", "token"}
+
+
+def unwrap_extended_json(value):
+    """
+    Recursively convert MongoDB Extended JSON wrapper objects into plain
+    Python values: {"$oid": "abc"} -> "abc", {"$date": "2024-01-01..."} ->
+    "2024-01-01...", {"$date": {"$numberLong": "..."}} -> an ISO date
+    string, {"$numberLong"/"$numberInt"/"$numberDouble"/"$numberDecimal":
+    "123"} -> a plain int/float.
+
+    Without this, a generic flatten turns these into unreadable columns
+    like "dob.$date.$numberLong" instead of a normal ID/date/number.
+    """
+    if isinstance(value, dict):
+        keys = set(value.keys())
+        if keys == {"$oid"}:
+            return value["$oid"]
+        if keys == {"$date"}:
+            inner = value["$date"]
+            if isinstance(inner, dict) and set(inner.keys()) == {"$numberLong"}:
+                millis = int(inner["$numberLong"])
+                # datetime.fromtimestamp() raises OSError on Windows for
+                # pre-1970 dates (e.g. a date of birth) - pure arithmetic
+                # from the epoch works for any date, any platform.
+                epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+                return (epoch + timedelta(milliseconds=millis)).isoformat()
+            return inner
+        if keys == {"$numberLong"} or keys == {"$numberInt"}:
+            return int(next(iter(value.values())))
+        if keys == {"$numberDouble"} or keys == {"$numberDecimal"}:
+            return float(next(iter(value.values())))
+        return {k: unwrap_extended_json(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [unwrap_extended_json(v) for v in value]
+    return value
+
+
+def redact_sensitive_fields(value):
+    """Recursively drop fields whose name suggests a credential/secret
+    (password hashes, tokens, etc.) - these should never land in an Excel
+    file handed to non-technical staff, even in demo data."""
+    if isinstance(value, dict):
+        return {
+            k: redact_sensitive_fields(v)
+            for k, v in value.items()
+            if k.lower() not in SENSITIVE_FIELD_NAMES
+        }
+    if isinstance(value, list):
+        return [redact_sensitive_fields(v) for v in value]
+    return value
+
+
+def clean_data(value):
+    """Unwrap MongoDB Extended JSON types and drop sensitive fields."""
+    return redact_sensitive_fields(unwrap_extended_json(value))
 
 
 def parse_dnd_filepaths(data: str) -> list:
@@ -83,21 +202,22 @@ def parse_dnd_filepaths(data: str) -> list:
 
 def process_data(data):
     """
-    THIS IS THE FUNCTION TO REPLACE ONCE YOU SEE THE REAL AMBUNET EXPORT.
+    Cleans (unwraps Extended JSON, redacts sensitive fields) then does a
+    generic best-effort flatten of whatever JSON shape it's given, and
+    returns a dict of {sheet_name: DataFrame}. For a multi-file export
+    (see load_entity_folder()/load_entity_zip()), `data` is already a
+    dict of {entity_name: [records]} by the time it gets here, so each
+    entity naturally becomes its own sheet via the dict branch below.
 
-    Right now it does a generic best-effort flatten of whatever JSON shape
-    it's given, and returns a dict of {sheet_name: DataFrame}.
-
-    Later, once you know the actual structure (e.g. top-level keys like
-    "patients", "shifts", "employees"), you'll likely want to:
-      - Split each top-level key into its own sheet
-      - Rename/reorder columns to something human-readable
-      - Reformat dates, IDs, etc.
-      - Drop internal/system fields the user doesn't need to see
-
-    For now this just tries to produce *something* readable no matter what
-    shape of JSON comes in.
+    STILL GENERIC PER ENTITY, NOT BESPOKE: column names are still whatever
+    the raw field names are, deeply-nested repeating sub-records (e.g. an
+    EPCR's vitals-over-time or a vehicle's service history) still flatten
+    with numeric-indexed columns rather than their own linked sheet, and
+    nothing is renamed/reordered for readability yet. Once there's a
+    reason to polish a specific entity's output, that's the kind of
+    per-entity logic to add here (see the README's open questions).
     """
+    data = clean_data(data)
     sheets = {}
 
     if isinstance(data, list):
@@ -160,18 +280,27 @@ class App(TkinterDnD.Tk):
 
         ttk.Label(
             self,
-            text="Click below, or drag a JSON file onto this window,\n"
-                 "and this will create a formatted Excel file next to it.",
+            text="Click a button below, or drag your export (zip, folder,\n"
+                 "or a single JSON file) onto this window.",
             justify="center",
         ).pack(pady=(0, 20))
 
+        button_row = ttk.Frame(self)
+        button_row.pack()
         ttk.Button(
-            self,
-            text="Upload JSON File",
-            padding=(20, 12),
+            button_row,
+            text="Upload ZIP File",
+            padding=(16, 12),
             style="Upload.TButton",
-            command=self.handle_upload,
-        ).pack()
+            command=self.handle_upload_zip,
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            button_row,
+            text="Upload Folder",
+            padding=(16, 12),
+            style="Upload.TButton",
+            command=self.handle_upload_folder,
+        ).pack(side="left")
 
         self.status_label = ttk.Label(
             self, text="", foreground="gray20", wraplength=self.WINDOW_WIDTH - 40
@@ -180,7 +309,7 @@ class App(TkinterDnD.Tk):
 
         ttk.Label(
             self,
-            text="Built for EDMS by Ashley Powell (Ash Kapow)",
+            text="Built for EDMS by Ash Kapow",
             font=("Segoe UI", 8),
             foreground="gray50",
         ).pack(side="bottom", pady=(0, 10))
@@ -199,35 +328,53 @@ class App(TkinterDnD.Tk):
         self.update_idletasks()
         self.geometry(f"{self.WINDOW_WIDTH}x{self.winfo_reqheight()}")
 
-    def handle_upload(self):
+    def handle_upload_zip(self):
         filepath = filedialog.askopenfilename(
-            title="Select the Ambunet JSON export",
-            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            title="Select the Ambunet export zip",
+            filetypes=[("Zip files", "*.zip"), ("All files", "*.*")],
         )
         if not filepath:
             return
-        self.process_file(filepath)
+        self.process_path(Path(filepath))
+
+    def handle_upload_folder(self):
+        folder = filedialog.askdirectory(title="Select the Ambunet export folder")
+        if not folder:
+            return
+        self.process_path(Path(folder))
 
     def handle_drop(self, event):
         paths = parse_dnd_filepaths(event.data)
         if not paths:
             return
-        self.process_file(paths[0])
+        self.process_path(Path(paths[0]))
 
-    def process_file(self, filepath):
+    def process_path(self, path: Path):
+        """Handle a dropped or picked path, whichever of the three supported
+        shapes it turns out to be: a folder, a zip, or a single JSON file."""
         self._set_status("Processing...")
 
         try:
-            data = load_json(filepath)
-            sheets = process_data(data)
+            skipped = []
+            if path.is_dir():
+                data, skipped = load_entity_folder(path)
+                default_name = f"{path.name}_formatted.xlsx"
+                default_dir = path.parent
+            elif path.suffix.lower() == ".zip":
+                data, skipped = load_entity_zip(path)
+                default_name = f"{path.stem}_formatted.xlsx"
+                default_dir = path.parent
+            else:
+                data = load_json(str(path))
+                default_name = f"{path.stem}_formatted.xlsx"
+                default_dir = path.parent
 
-            src = Path(filepath)
-            default_out = src.with_name(src.stem + "_formatted.xlsx")
+            sheets = process_data(data)
 
             output_path = filedialog.asksaveasfilename(
                 title="Save formatted file as",
-                initialfile=default_out.name,
-                initialdir=str(src.parent),
+                initialfile=default_name,
+                initialdir=str(default_dir),
                 defaultextension=".xlsx",
                 filetypes=[("Excel file", "*.xlsx")],
             )
@@ -238,10 +385,13 @@ class App(TkinterDnD.Tk):
             save_as_excel(sheets, output_path)
 
             self._set_status(f"Done! Saved to:\n{output_path}")
-            messagebox.showinfo(
-                APP_TITLE,
-                f"Success! Your formatted file is ready:\n\n{output_path}",
-            )
+            success_message = f"Success! Your formatted file is ready:\n\n{output_path}"
+            if skipped:
+                names = "\n".join(f"  - {name}" for name, _ in skipped)
+                success_message += (
+                    f"\n\n{len(skipped)} file(s) couldn't be read and were skipped:\n{names}"
+                )
+            messagebox.showinfo(APP_TITLE, success_message)
 
         except json.JSONDecodeError:
             self._set_status("")
