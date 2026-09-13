@@ -7,14 +7,19 @@ import pytest
 
 from edms_databridge import (
     clean_data,
+    generate_pdfs,
+    humanize_field_name,
     load_entity_folder,
     load_entity_zip,
     load_json,
     load_logo_image,
+    log_error,
     parse_dnd_filepaths,
     process_data,
+    record_label,
     redact_sensitive_fields,
     resource_path,
+    sanitize_filename,
     unwrap_extended_json,
 )
 
@@ -251,6 +256,18 @@ def test_load_entity_folder_skips_unparseable_files_without_aborting(tmp_path):
     assert skipped[0][0] == "broken.json"
 
 
+def test_load_entity_folder_ignores_macos_appledouble_files(tmp_path):
+    # Regression test: a real zip the user tried was packaged on a Mac,
+    # which mirrors every real file with a non-JSON "._filename" shadow
+    # file - these aren't a parse failure, they should be silently
+    # ignored rather than reported as 118 "couldn't be read" files.
+    (tmp_path / "employees.json").write_text('[{"name": "Alice"}]', encoding="utf-8")
+    (tmp_path / "._employees.json").write_bytes(b"\x00\x05\x16\x07not real json")
+    data, skipped = load_entity_folder(tmp_path)
+    assert data == {"employees": [{"name": "Alice"}]}
+    assert skipped == []
+
+
 def test_load_entity_zip_reads_json_members_regardless_of_nesting(tmp_path):
     zip_path = tmp_path / "export.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
@@ -270,3 +287,111 @@ def test_load_entity_zip_skips_unparseable_files_without_aborting(tmp_path):
     assert data == {"employees": [{"name": "Alice"}]}
     assert len(skipped) == 1
     assert skipped[0][0] == "broken.json"
+
+
+def test_load_entity_zip_ignores_macos_appledouble_and_metadata_folder(tmp_path):
+    zip_path = tmp_path / "export.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("ambunet_export/employees.json", '[{"name": "Alice"}]')
+        zf.writestr("ambunet_export/._employees.json", b"\x00\x05\x16\x07not real json")
+        zf.writestr("__MACOSX/ambunet_export/._employees.json", b"\x00\x05\x16\x07not real json")
+    data, skipped = load_entity_zip(zip_path)
+    assert data == {"employees": [{"name": "Alice"}]}
+    assert skipped == []
+
+
+def test_humanize_field_name_splits_camel_case():
+    assert humanize_field_name("firstName") == "First Name"
+
+
+def test_humanize_field_name_preserves_known_acronyms():
+    assert humanize_field_name("nhsNumber") == "NHS Number"
+    assert humanize_field_name("gcsEyes") == "GCS Eyes"
+
+
+def test_humanize_field_name_handles_snake_case():
+    assert humanize_field_name("first_name") == "First Name"
+
+
+def test_sanitize_filename_replaces_invalid_windows_characters():
+    assert sanitize_filename('a/b\\c:d*e?f"g<h>i|j') == "a_b_c_d_e_f_g_h_i_j"
+
+
+def test_sanitize_filename_falls_back_when_empty():
+    assert sanitize_filename("   ") == "record"
+
+
+def test_record_label_prefers_a_number_field():
+    record = {"_id": "abc", "epcrNumber": "0101", "name": "ignored"}
+    assert record_label(record, 0) == "0101"
+
+
+def test_record_label_matches_compound_title_field():
+    record = {"_id": "abc", "policyTitle": "Fire Safety Policy"}
+    assert record_label(record, 0) == "Fire Safety Policy"
+
+
+def test_record_label_falls_back_to_demographics_name():
+    record = {"_id": "abc", "demographics": {"firstName": "Jane", "lastName": "Doe"}}
+    assert record_label(record, 0) == "Jane Doe"
+
+
+def test_record_label_falls_back_to_id_then_index():
+    assert record_label({"_id": "abc123"}, 0) == "abc123"
+    assert record_label({}, 4) == "record_5"
+
+
+def test_generate_pdfs_writes_one_pdf_per_record(tmp_path):
+    data = {
+        "epcrs": [
+            {"_id": "1", "epcrNumber": "E001", "demographics": {"firstName": "A"}},
+            {"_id": "2", "epcrNumber": "E002", "demographics": {"firstName": "B"}},
+        ],
+        "employees": [{"_id": "3", "name": "Not a document entity"}],
+    }
+    counts = generate_pdfs(data, tmp_path)
+    assert counts == {"epcrs": 2}
+    pdf_dir = tmp_path / "pdfs" / "epcrs"
+    pdfs = sorted(pdf_dir.glob("*.pdf"))
+    assert [p.name for p in pdfs] == ["E001.pdf", "E002.pdf"]
+    assert pdfs[0].read_bytes().startswith(b"%PDF")
+    assert not (tmp_path / "pdfs" / "employees").exists()
+
+
+def test_generate_pdfs_dedupes_filename_collisions(tmp_path):
+    data = {
+        "epcrs": [
+            {"_id": "1", "title": "Duplicate"},
+            {"_id": "2", "title": "Duplicate"},
+        ]
+    }
+    generate_pdfs(data, tmp_path)
+    pdf_dir = tmp_path / "pdfs" / "epcrs"
+    names = sorted(p.name for p in pdf_dir.glob("*.pdf"))
+    assert names == ["Duplicate.pdf", "Duplicate_2.pdf"]
+
+
+def test_log_error_writes_traceback_to_appdata(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    try:
+        raise ValueError("something broke")
+    except ValueError as exc:
+        log_path = log_error("Processing test.zip", exc)
+
+    assert log_path == tmp_path / "EDMSDataBridge" / "EDMSDataBridge.log"
+    content = log_path.read_text(encoding="utf-8")
+    assert "Processing test.zip" in content
+    assert "ValueError: something broke" in content
+
+
+def test_log_error_appends_across_multiple_errors(tmp_path, monkeypatch):
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    for i in range(2):
+        try:
+            raise ValueError(f"error {i}")
+        except ValueError as exc:
+            log_error("ctx", exc)
+
+    content = (tmp_path / "EDMSDataBridge" / "EDMSDataBridge.log").read_text(encoding="utf-8")
+    assert "error 0" in content
+    assert "error 1" in content
