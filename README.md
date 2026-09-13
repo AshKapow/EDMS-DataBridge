@@ -7,8 +7,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
 
 A small Windows desktop tool that lets a non-technical user upload (or
-drag and drop) a JSON export (e.g. from Ambunet) and get back a clean,
-formatted Excel file.
+drag and drop) a JSON export (e.g. from Ambunet) and get back clean,
+formatted Excel and PDF files.
 
 Built primarily for EDMS (Emergency Doctors Medical Service) by Ash Kapow,
 and released as open source (MIT license —
@@ -18,42 +18,43 @@ see [LICENSE](LICENSE)) for anyone else who runs into the same problem.
 
 The company runs almost all core systems (patients, HR, shifts, etc.) on a
 third-party SaaS called Ambunet. If the company ever leaves Ambunet, the
-only guaranteed way to get data out is a raw JSON export — no promised
-format or structure. The author is one of the only technical people at the
-company, so this tool exists to make that export usable by a non-technical
-staff member without needing manual help under time pressure, if/when a
-departure ever becomes urgent.
+only guaranteed way to get data out is a raw JSON export. The author is
+one of the only technical people at the company, so this tool exists to
+make that export usable by a non-technical staff member without needing
+manual help under time pressure, if/when a departure ever becomes urgent.
 
-We do not yet have a real sample of Ambunet's export JSON, so we don't know
-if it's one file or several, a flat list or deeply nested, one file per
-entity type, etc. That's why the app is deliberately split into two layers:
-a generic, working core (upload -> flatten any reasonable JSON shape ->
-Excel) that's already useful today, and one isolated function,
-`process_data()` in `edms_databridge.py`, meant to be rewritten with
-real schema-specific logic once an actual sample export exists.
+We now have a real (demo) Ambunet export to work from: a zip containing
+one JSON file per entity (118 of them - employees, shifts, incidents,
+EPCRs, etc.), in MongoDB Extended JSON format (IDs as `{"$oid": ...}`,
+dates as `{"$date": ...}`, etc.). `clean_data()` in `edms_databridge.py`
+unwraps that into plain values before anything else touches it.
 
 ## Status
 
-Early scaffold. The JSON structure of the real Ambunet export isn't known
-yet, so `edms_databridge.py` currently does a **generic flatten**: it
-turns any list-of-records or dict-of-lists JSON into one Excel file (with
-one sheet per top-level list). Once we get a real sample export, update
-`process_data()` in `edms_databridge.py` with schema-specific logic
-(column renaming, date formatting, splitting entities properly, etc).
+Accepts a zip, a folder, or a single JSON file (button click or drag-and-
+drop). Each entity is classified as either tabular (flattened into its own
+Excel sheet - still a **generic** flatten, not bespoke per-entity column
+naming/ordering) or document-shaped (clinical/incident case records and
+formal company documents like policies/SOPs get one PDF per record
+instead, laid out with real sections and tables rather than a flattened
+row). See `DOCUMENT_ENTITIES` in `edms_databridge.py` for the current
+classification - it was judgment-called against the demo data and is
+still pending a full review of the actual output against every entity.
 
-Not yet tested against a real Ambunet export (none exists yet), and not
-yet tested as a built `.exe` on a clean machine.
+Not yet tested as a built `.exe` on a clean machine (no dev tools/antivirus
+false-positive check).
 
 ## Tech decisions
 
-Python + Tkinter + pandas/openpyxl, packaged as a single unsigned `.exe`
-via PyInstaller (`--onefile --windowed`), chosen over C#/.NET or Electron
-for speed of iteration given the author's background, and because a single
-unsigned `.exe` is enough for an internal tool — no installer needed.
+Python + Tkinter + pandas/openpyxl/reportlab, packaged as a single
+unsigned `.exe` via PyInstaller (`--onefile --windowed`), chosen over
+C#/.NET or Electron for speed of iteration given the author's background,
+and because a single unsigned `.exe` is enough for an internal tool — no
+installer needed.
 
-Output format is currently Excel (`.xlsx`), one sheet per top-level
-entity type — but this was an early default, never a confirmed
-requirement. See open question 2 below.
+Output is a mix of Excel (`.xlsx`, one sheet per tabular entity) and PDF
+(one per record, for document-shaped entities) - see Status above and
+`DOCUMENT_ENTITIES` in `edms_databridge.py`.
 
 ## Setup (dev machine)
 
@@ -74,10 +75,13 @@ python edms_databridge.py
 
 ## Testing & linting
 
-Unit tests cover the core, GUI-free logic: JSON loading/parsing, the
-generic flatten (`process_data()`), asset-path resolution/logo loading,
-and drag-and-drop path parsing. The Tkinter GUI itself (widgets, dialogs,
-actual drag-and-drop) is exercised manually, not by automated tests.
+Unit tests cover the core, GUI-free logic: JSON loading/parsing (including
+mixed file encodings), the generic flatten (`process_data()`), Extended
+JSON unwrapping and sensitive-field redaction (`clean_data()`), multi-file
+folder/zip ingestion (including filtering out macOS packaging junk), PDF
+generation, error logging, and the version/update-check helpers. The
+Tkinter GUI itself (widgets, dialogs, actual drag-and-drop) is exercised
+manually, not by automated tests.
 
 ```
 pytest
@@ -87,7 +91,9 @@ ruff check .
 CI (GitHub Actions, `.github/workflows/ci.yml`) runs both on every push and
 pull request against `main`, then does a smoke-test build of the exe with
 PyInstaller and uploads it as a workflow artifact, so a working build is
-always downloadable without needing a local Python setup.
+always downloadable without needing a local Python setup. On `main`
+specifically it can also cut a full GitHub Release - see Versioning &
+releases below.
 
 ## Build the standalone .exe
 
@@ -174,13 +180,18 @@ make every PR permanently unmergeable without an admin override.
 
 ## Open questions / next steps
 
-1. **Real schema** — get a real (even small, anonymized) sample JSON export
-   from Ambunet, then rewrite `process_data()` for it: proper column
-   names/order, date formatting, splitting entities correctly, dropping
-   internal/system fields. This is the priority once a sample exists.
-2. **Right target format** — is Excel actually the right end format, or is
-   this data meant to feed another system, in which case CSV or a
-   different JSON shape might matter more than a spreadsheet?
+1. **Bespoke per-entity polish** — `process_data()` still does a generic
+   flatten for every tabular entity: raw field names as column headers,
+   no reordering, deeply-nested repeating sub-records (e.g. a vehicle's
+   service history) flatten to numeric-indexed columns rather than a
+   proper linked sheet. Worth doing per-entity once there's a reason to
+   (see `DOCUMENT_ENTITIES`'s more polished treatment for the document
+   entities as the template for what "worth it" looks like).
+2. **Review the DOCUMENT_ENTITIES classification** — which of the 118
+   entities get PDF treatment vs. an Excel sheet was judgment-called
+   against the demo export, including a couple of outright guesses
+   (`vdis`, `peaactions`). Needs a full pass against the actual generated
+   output before it's trusted.
 3. **Distribution/signing** — still unsigned, so Windows SmartScreen warns
    on first run. Is a code-signing certificate worth it, or is "click More
    info -> Run anyway" an acceptable one-time instruction for internal
