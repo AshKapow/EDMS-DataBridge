@@ -34,12 +34,13 @@ unwraps that into plain values before anything else touches it.
 Accepts a zip, a folder, or a single JSON file (button click or drag-and-
 drop). Each entity is classified as either tabular (flattened into its own
 Excel sheet - still a **generic** flatten, not bespoke per-entity column
-naming/ordering) or document-shaped (clinical/incident case records and
-formal company documents like policies/SOPs get one PDF per record
-instead, laid out with real sections and tables rather than a flattened
-row). See `DOCUMENT_ENTITIES` in `edms_databridge.py` for the current
-classification - it was judgment-called against the demo data and is
-still pending a full review of the actual output against every entity.
+naming/ordering) or document-shaped (clinical/incident case records with
+genuine narrative content get one PDF per record instead, laid out with
+real sections and tables, branded with the EDMS logo on every page). See
+`DOCUMENT_ENTITIES` in `edms_databridge.py` for the current classification
+- reviewed against the actual generated output, not just guessed from
+field names, though a handful of entities with no records in the demo
+export are still unverified (see open questions).
 
 Not yet tested as a built `.exe` on a clean machine (no dev tools/antivirus
 false-positive check).
@@ -107,10 +108,10 @@ just run it after the dev setup above. It produces
 the file to hand to end users. They just double-click it, no Python
 install needed on their machine.
 
-Note: the exe is unsigned, so Windows SmartScreen will show a warning on
-first run ("Windows protected your PC"). Users click "More info" → "Run
-anyway". A code-signing certificate would remove this, if it becomes worth
-the cost for wider distribution.
+Note: the exe is unsigned (a deliberate decision - signing isn't worth the
+cost/hassle for one internal app), so Windows SmartScreen will show a
+warning on first run ("Windows protected your PC"). Users click "More
+info" → "Run anyway" - a one-time instruction, not a bug.
 
 ## Versioning & releases
 
@@ -187,14 +188,33 @@ make every PR permanently unmergeable without an admin override.
    proper linked sheet. Worth doing per-entity once there's a reason to
    (see `DOCUMENT_ENTITIES`'s more polished treatment for the document
    entities as the template for what "worth it" looks like).
-2. **Review the DOCUMENT_ENTITIES classification** — which of the 118
-   entities get PDF treatment vs. an Excel sheet was judgment-called
-   against the demo export, including a couple of outright guesses
-   (`vdis`, `peaactions`). Needs a full pass against the actual generated
-   output before it's trusted.
-3. **Distribution/signing** — still unsigned, so Windows SmartScreen warns
-   on first run. Is a code-signing certificate worth it, or is "click More
-   info -> Run anyway" an acceptable one-time instruction for internal
-   staff?
-4. **Clean-machine testing** — the built `.exe` hasn't been tested on a
+2. **File attachments aren't handled at all** — confirmed via AmbuNet's own
+   Data Export Policy that the real export includes an "object storage"/
+   document bucket of actual files (images, PDFs) alongside the JSON, and
+   several entities (e.g. `meetings`, and formerly `policies`) reference
+   them by an S3 key. Right now those references just show as raw text;
+   nothing copies, links, or embeds the actual files. Entities not
+   included in a `.json`-only export (e.g. images the user has seen
+   directly, like ID card photos) are silently skipped.
+3. **Bespoke per-entity polish for the remaining tabular entities that
+   deserve it** — e.g. `policies`/`sops`/`pgds` (moved out of
+   `DOCUMENT_ENTITIES`, see below) are really acknowledgment-tracking
+   records; a "who's acknowledged the latest version" summary view would
+   be more useful than the raw flatten they get today.
+4. **Distribution/signing** — settled: staying unsigned. SmartScreen's
+   "More info -> Run anyway" is an acceptable one-time instruction for
+   internal staff; a certificate isn't worth the hassle for one app.
+5. **Clean-machine testing** — the built `.exe` hasn't been tested on a
    machine without dev tools/antivirus false-positive checks yet.
+
+`DOCUMENT_ENTITIES` classification has now been reviewed against the real
+generated output (not just guessed from field names) - see the comments
+above that set for what changed and why. `vdis` and six "formal document"
+entities (`policies`, `policydescriptions`, `sops`, `pgds`, `coshhsheets`,
+`statementofpurposes`) moved to tabular after inspection showed they're
+acknowledgment/version-tracking metadata, not narrative content - the real
+document text lives in an externally-linked file (see open question 2).
+A handful of entities with 0 records in the demo export (`paperpcrs`,
+`medicalassessments`, `occupationalhealths`, `uninjuredreports`,
+`imagingrequests`, `appraisals`, `complexdecisions`) are still unverified
+and kept as documents on domain reasoning alone.

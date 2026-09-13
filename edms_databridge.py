@@ -352,20 +352,70 @@ PAGE_CONTENT_WIDTH = 18 * cm
 # (see README open questions); not exhaustive/final - review and adjust
 # as real usage turns up more/fewer entities that belong here.
 DOCUMENT_ENTITIES = {
-    # Clinical/incident case records
-    "epcrs", "paperpcrs", "incidents", "cadincidents", "ptspatients",
-    "medicalassessments", "occupationalhealths", "ptsriskassessments",
-    "uninjuredreports", "imagingrequests",
-    # People/HR narrative records
-    "appraisals", "employeeapplications", "speakupconcerns", "complexdecisions",
-    # Formal documents (policies/protocols - never tabular data to begin with)
-    "policies", "policydescriptions", "sops", "pgds", "coshhsheets",
-    "statementofpurposes", "meetings",
-    # Uncertain abbreviations - flagged for review, tentatively treated as
-    # documents since getting this wrong the other way (flattening a real
-    # narrative record into spreadsheet columns) is the worse failure mode
-    "vdis", "peaactions",
+    # Clinical/incident case records - verified against the real demo data
+    # to contain genuine narrative prose (descriptions, summaries, clinical
+    # notes), not just metadata.
+    "epcrs", "incidents", "cadincidents", "ptspatients", "ptsriskassessments",
+    # People/HR narrative records - also verified: real interview notes,
+    # a full whistleblowing description, etc.
+    "employeeapplications", "speakupconcerns",
+    # Governance record with substantial inline content (agenda items,
+    # minutes, risk review notes) - verified, not just tracking metadata.
+    "meetings",
+    # "peaactions": confirmed clinical (PEA = Pulseless Electrical Activity,
+    # a cardiac arrest rhythm - see the nested cardiacArrest field on
+    # epcrs), so this is an incident-style case record, not a checklist.
+    "peaactions",
+    # The following have 0 records in the demo export, so couldn't be
+    # directly verified - kept as documents on domain reasoning (the same
+    # reasoning that held up for every entity above that WAS verifiable),
+    # but worth a real check once real records exist:
+    "paperpcrs", "medicalassessments", "occupationalhealths",
+    "uninjuredreports", "imagingrequests", "appraisals", "complexdecisions",
 }
+
+# Moved OUT of DOCUMENT_ENTITIES after reviewing real generated PDFs:
+# policies, policydescriptions, sops, pgds, coshhsheets, statementofpurposes
+# looked like "formal documents" by name, but the actual records are thin
+# acknowledgment/version-tracking metadata (who signed off, when, which
+# version) referencing an EXTERNAL linked file (a "docLink"/S3 key) for the
+# real document text - which this tool doesn't fetch. A PDF built from just
+# that metadata isn't a useful "document", so these are tabular instead.
+#
+# "vdis" was also removed - confirmed via research to be Vehicle Daily
+# Inspection, a routine per-shift checklist, not a narrative record.
+
+# PDF document titles for each entity in DOCUMENT_ENTITIES. These are raw
+# lowercase filename stems (e.g. "employeeapplications"), not camelCase,
+# so humanize_field_name() can't recover word boundaries automatically -
+# hence an explicit mapping rather than a generic split. Falls back to
+# humanize_field_name() for anything not listed (see entity_display_name()).
+ENTITY_DISPLAY_NAMES = {
+    "epcrs": "EPCR",
+    "paperpcrs": "Paper PCR",
+    "incidents": "Incident Report",
+    "cadincidents": "CAD Incident",
+    "ptspatients": "PTS Patient Record",
+    "medicalassessments": "Medical Assessment",
+    "occupationalhealths": "Occupational Health Record",
+    "ptsriskassessments": "PTS Risk Assessment",
+    "uninjuredreports": "Uninjured Person Report",
+    "imagingrequests": "Imaging Request",
+    "appraisals": "Employee Appraisal",
+    "employeeapplications": "Employee Application",
+    "speakupconcerns": "Speak Up Concern",
+    "complexdecisions": "Complex Decision Record",
+    "meetings": "Meeting Minutes",
+    "peaactions": "PEA Action (Pulseless Electrical Activity)",
+}
+
+
+def entity_display_name(entity_name: str) -> str:
+    """Human-readable title for a document entity's PDFs. See
+    ENTITY_DISPLAY_NAMES; falls back to humanize_field_name() so an
+    unmapped entity still gets *something* readable rather than raising."""
+    return ENTITY_DISPLAY_NAMES.get(entity_name, humanize_field_name(entity_name))
+
 
 # Field names that read fine expanded to their acronym instead of Title
 # Case, e.g. "nhsNumber" -> "NHS Number" not "Nhs Number".
@@ -405,8 +455,11 @@ def record_label(record: dict, index: int) -> str:
         for key, value in record.items():
             if key.lower() in ("firstname", "lastname"):
                 continue  # handled by the combined-name checks below
-            if key.lower().endswith(suffix) and isinstance(value, str) and value:
-                return value
+            # "...Number" fields aren't always strings (e.g. cadincidents'
+            # incidentNumber is a plain int) - accept str/int/float alike.
+            is_useful = isinstance(value, (str, int, float)) and value != ""
+            if key.lower().endswith(suffix) and is_useful:
+                return str(value)
     demographics = record.get("demographics")
     if isinstance(demographics, dict):
         first = demographics.get("firstName") or ""
@@ -584,18 +637,37 @@ def _build_flowables(data: dict, styles, heading_style: str) -> list:
     return flowables
 
 
+def _draw_letterhead(canvas, doc):
+    """Draws the EDMS logo in the top-right corner - reportlab calls this
+    once per page via onFirstPage/onLaterPages, so it's on every page of a
+    multi-page document, not just the first."""
+    logo_path = resource_path("assets/logo.png")
+    if not logo_path.exists():
+        return
+    canvas.saveState()
+    logo_size = 1.4 * cm
+    x = doc.pagesize[0] - doc.rightMargin - logo_size
+    y = doc.pagesize[1] - doc.topMargin - logo_size + 0.4 * cm
+    canvas.drawImage(
+        str(logo_path), x, y, width=logo_size, height=logo_size,
+        preserveAspectRatio=True, mask="auto",
+    )
+    canvas.restoreState()
+
+
 def render_record_pdf(entity_name: str, record: dict, output_path):
-    """Render one record as a PDF laid out like a real document - a title,
-    a small reference line (ID/created/updated), then a section per
-    top-level field: nested objects become subsections, nested lists of
-    records become tables, everything else becomes Label: Value rows."""
+    """Render one record as a PDF laid out like a real document - an EDMS-
+    branded letterhead, a title, a small reference line (ID/created/
+    updated), then a section per top-level field: nested objects become
+    subsections, nested lists of records become tables, everything else
+    becomes Label: Value rows."""
     styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(
         str(output_path), pagesize=A4,
         topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=1.5 * cm, rightMargin=1.5 * cm,
     )
 
-    story = [Paragraph(humanize_field_name(entity_name), styles["Title"])]
+    story = [Paragraph(entity_display_name(entity_name), styles["Title"])]
 
     reference_bits = [
         f"{humanize_field_name(key)}: {record[key]}"
@@ -609,7 +681,7 @@ def render_record_pdf(entity_name: str, record: dict, output_path):
     body = {k: v for k, v in record.items() if k not in ("_id", "__v", "createdAt", "updatedAt")}
     story.extend(_build_flowables(body, styles, "Heading2"))
 
-    doc.build(story)
+    doc.build(story, onFirstPage=_draw_letterhead, onLaterPages=_draw_letterhead)
 
 
 def generate_pdfs(data: dict, output_dir) -> dict:
@@ -838,7 +910,7 @@ class App(TkinterDnD.Tk):
             if pdf_counts:
                 total_pdfs = sum(pdf_counts.values())
                 pdf_lines = "\n".join(
-                    f"  - {humanize_field_name(e)}: {c}" for e, c in pdf_counts.items()
+                    f"  - {entity_display_name(e)}: {c}" for e, c in pdf_counts.items()
                 )
                 success_message += f"\n\n{total_pdfs} PDF document(s) also created:\n{pdf_lines}"
             if skipped:

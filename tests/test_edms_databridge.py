@@ -6,7 +6,10 @@ from pathlib import Path
 import pytest
 
 from edms_databridge import (
+    DOCUMENT_ENTITIES,
+    ENTITY_DISPLAY_NAMES,
     clean_data,
+    entity_display_name,
     generate_pdfs,
     get_latest_release_version,
     humanize_field_name,
@@ -329,6 +332,14 @@ def test_record_label_prefers_a_number_field():
     assert record_label(record, 0) == "0101"
 
 
+def test_record_label_handles_a_number_field_that_is_an_int():
+    # Regression: cadincidents.incidentNumber is a plain int, not a
+    # string - the original suffix check required isinstance(value, str)
+    # and silently fell through to the _id fallback instead.
+    record = {"_id": "abc", "incidentNumber": 1109262001}
+    assert record_label(record, 0) == "1109262001"
+
+
 def test_record_label_matches_compound_title_field():
     record = {"_id": "abc", "policyTitle": "Fire Safety Policy"}
     assert record_label(record, 0) == "Fire Safety Policy"
@@ -459,3 +470,25 @@ def test_get_latest_release_version_returns_none_on_network_failure(monkeypatch)
 
     monkeypatch.setattr("edms_databridge.urllib.request.urlopen", raise_error)
     assert get_latest_release_version() is None
+
+
+def test_entity_display_name_uses_the_mapping():
+    assert entity_display_name("employeeapplications") == "Employee Application"
+    assert entity_display_name("cadincidents") == "CAD Incident"
+
+
+def test_entity_display_name_falls_back_to_humanize():
+    assert entity_display_name("someunmappedentity") == "Someunmappedentity"
+
+
+def test_vdis_is_not_a_document_entity():
+    # Regression: vdis was originally an unconfirmed guess in
+    # DOCUMENT_ENTITIES, but it's actually Vehicle Daily Inspection - a
+    # routine checklist, not a narrative case record - confirmed via
+    # research and moved to the tabular (Excel) side.
+    assert "vdis" not in DOCUMENT_ENTITIES
+
+
+def test_every_document_entity_has_a_display_name():
+    unmapped = DOCUMENT_ENTITIES - set(ENTITY_DISPLAY_NAMES)
+    assert unmapped == set()
