@@ -14,6 +14,93 @@ Built primarily for EDMS (Emergency Doctors Medical Service) by Ash Kapow,
 and released as open source (MIT license —
 see [LICENSE](LICENSE)) for anyone else who runs into the same problem.
 
+---
+
+# For Users
+
+No technical knowledge needed - these are the only steps you should have
+to follow.
+
+**1. Get the app.** Download `EDMSDataBridge.exe` from the
+[latest release](https://github.com/AshKapow/EDMS-DataBridge/releases/latest).
+It's a single file - no installer, nothing else to set up.
+
+**2. First time opening it, Windows will show a blue "Windows protected
+your PC" warning.** This is expected - the app isn't digitally signed
+(a deliberate decision, not a mistake), so Windows warns about anything
+unfamiliar. Click **More info**, then **Run anyway**. You'll only see
+this once.
+
+**3. Get your Ambunet export.** This is the zip file (or a folder you've
+already unzipped) that Ambunet gives you when you request your data.
+Don't unzip it yourself if you don't need to - the app can open the zip
+directly.
+
+**4. In the app, either:**
+   - Click **Upload ZIP File** or **Upload Folder** and pick it, or
+   - Just drag the zip/folder straight onto the app window.
+
+**5. Choose where to save.** If your export contains simple, list-style
+data only, you'll be asked for a filename and get back a single Excel
+file. If it contains anything more document-like (see below), you'll
+instead be asked to choose a **folder** - the app will create an Excel
+file plus a set of neatly laid-out PDF documents inside it.
+
+**6. That's it.** You'll get a confirmation showing what was created and
+where. If anything goes wrong, you'll see a plain-English error message;
+a more detailed log is automatically saved and the folder containing it
+opens for you, in case you need to share it with whoever supports this
+app.
+
+## What you'll get back
+
+Most of your data becomes an **Excel spreadsheet**, one tab per record
+type (staff, shifts, vehicles, training records, and so on).
+
+A smaller set of record types read much better as an actual document, so
+those instead become **one PDF per record**, sorted into folders:
+
+| Record type | What it becomes |
+|---|---|
+| EPCR (electronic patient care record) | `pdfs/epcrs/` |
+| Paper PCR | `pdfs/paperpcrs/` |
+| Incident Report | `pdfs/incidents/` |
+| CAD Incident | `pdfs/cadincidents/` |
+| PTS Patient Record | `pdfs/ptspatients/` |
+| PTS Risk Assessment | `pdfs/ptsriskassessments/` |
+| Medical Assessment | `pdfs/medicalassessments/` |
+| Occupational Health Record | `pdfs/occupationalhealths/` |
+| Uninjured Person Report | `pdfs/uninjuredreports/` |
+| Imaging Request | `pdfs/imagingrequests/` |
+| Employee Appraisal | `pdfs/appraisals/` |
+| Employee Application | `pdfs/employeeapplications/` |
+| Speak Up Concern | `pdfs/speakupconcerns/` |
+| Complex Decision Record | `pdfs/complexdecisions/` |
+| Meeting Minutes | `pdfs/meetings/` |
+| PEA Action | `pdfs/peaactions/` |
+
+This list may grow or change as the app is refined - see the open
+questions near the bottom of this README for anything still under review.
+
+## Good to know
+
+- **Images and other attached files aren't included yet.** If your export
+  has photos or documents attached to records, those are currently
+  skipped - only the data itself is converted. This is a known gap, not
+  a bug (see open questions).
+- **Some fields show as long codes (e.g. `6aa375ba64611cac41c15da2`)
+  instead of a name.** These are internal reference IDs - Ambunet itself
+  doesn't resolve them to names outside its own system either, so this
+  matches how the data is actually structured, not a mistake in the
+  conversion.
+- **Passwords and similar credential fields are automatically removed**
+  before anything is saved, even though the raw export technically
+  includes them.
+
+---
+
+# For Developers
+
 ## Background
 
 The company runs almost all core systems (patients, HR, shifts, etc.) on a
