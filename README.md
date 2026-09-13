@@ -106,6 +106,35 @@ first run ("Windows protected your PC"). Users click "More info" → "Run
 anyway". A code-signing certificate would remove this, if it becomes worth
 the cost for wider distribution.
 
+## Versioning & releases
+
+The app follows [semantic versioning](https://semver.org/) (MAJOR.MINOR.PATCH).
+The single source of truth is the [VERSION](VERSION) file - everything
+else derives from it:
+
+- **In-app footer** reads it at runtime and shows e.g. "EDMS DataBridge
+  v0.1.0".
+- **`version_info.txt`** (the exe's Windows file-properties metadata) is
+  generated from it by `generate_version_info.py` - don't hand-edit
+  `version_info.txt`, it'll just get overwritten on the next build.
+  `build.bat` and CI both regenerate it automatically before building.
+- **GitHub Releases**: on every push to `main`, CI checks whether
+  `VERSION` names a version that doesn't have a release yet. If it's new,
+  CI builds the exe, tags the commit `vX.Y.Z`, and creates a GitHub
+  Release with the exe attached - that's what the team should download
+  from, rather than building it themselves. Most pushes don't bump the
+  version, so most CI runs skip this step entirely.
+
+**To cut a release**: bump the version in the `VERSION` file (following
+semver - patch for fixes, minor for new features, major for breaking
+changes) as part of your PR. Once that PR merges to `main`, the release
+is created automatically within a few minutes.
+
+The app also does a quiet, best-effort check on startup for whether a
+newer release exists (via the GitHub API) and shows a small clickable
+notice if so - it never blocks startup or shows anything if the check
+fails (no network, GitHub unreachable, etc).
+
 ## Branding
 
 The in-app header shows the official EDMS "ED" mark (`assets/logo.png`).
@@ -133,6 +162,8 @@ make every PR permanently unmergeable without an admin override.
 ├── requirements-dev.txt   # runtime deps + pytest/ruff for local dev & CI
 ├── pyproject.toml         # pytest and ruff config
 ├── build.bat              # builds the standalone exe
+├── VERSION                # single source of truth for the app's version
+├── generate_version_info.py # generates version_info.txt from VERSION
 ├── version_info.txt       # Windows file-properties metadata for the exe
 ├── .github/workflows/     # CI: lint, test, and build-smoke-test on push/PR
 ├── .github/ISSUE_TEMPLATE/ # bug report / feature request forms

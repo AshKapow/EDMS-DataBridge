@@ -8,13 +8,16 @@ import pytest
 from edms_databridge import (
     clean_data,
     generate_pdfs,
+    get_latest_release_version,
     humanize_field_name,
     load_entity_folder,
     load_entity_zip,
     load_json,
     load_logo_image,
+    load_version,
     log_error,
     parse_dnd_filepaths,
+    parse_version,
     process_data,
     record_label,
     redact_sensitive_fields,
@@ -395,3 +398,64 @@ def test_log_error_appends_across_multiple_errors(tmp_path, monkeypatch):
     content = (tmp_path / "EDMSDataBridge" / "EDMSDataBridge.log").read_text(encoding="utf-8")
     assert "error 0" in content
     assert "error 1" in content
+
+
+def test_load_version_reads_the_real_version_file():
+    # In dev mode resource_path() resolves relative to the repo root,
+    # where the real VERSION file lives.
+    version = load_version()
+    assert version != "unknown"
+    assert len(version.split(".")) == 3
+
+
+def test_load_version_falls_back_when_missing(monkeypatch):
+    monkeypatch.setattr(
+        "edms_databridge.resource_path", lambda relative_path: Path("no/such/VERSION")
+    )
+    assert load_version() == "unknown"
+
+
+@pytest.mark.parametrize(
+    "version,expected",
+    [
+        ("1.2.3", (1, 2, 3)),
+        ("v1.2.3", (1, 2, 3)),
+        ("V1.2.3", (1, 2, 3)),
+        ("1.2", (1, 2, 0)),
+        ("2", (2, 0, 0)),
+        ("abc", (0, 0, 0)),
+    ],
+)
+def test_parse_version(version, expected):
+    assert parse_version(version) == expected
+
+
+def test_parse_version_orders_correctly_for_comparison():
+    assert parse_version("0.2.0") > parse_version("0.1.9")
+    assert parse_version("1.0.0") > parse_version("0.99.99")
+    assert parse_version("1.2.3") == parse_version("v1.2.3")
+
+
+def test_get_latest_release_version_returns_tag_on_success(monkeypatch):
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return b'{"tag_name": "v0.2.0"}'
+
+    monkeypatch.setattr(
+        "edms_databridge.urllib.request.urlopen", lambda *a, **k: FakeResponse()
+    )
+    assert get_latest_release_version() == "v0.2.0"
+
+
+def test_get_latest_release_version_returns_none_on_network_failure(monkeypatch):
+    def raise_error(*args, **kwargs):
+        raise TimeoutError("no network")
+
+    monkeypatch.setattr("edms_databridge.urllib.request.urlopen", raise_error)
+    assert get_latest_release_version() is None
