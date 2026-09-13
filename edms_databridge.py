@@ -27,7 +27,11 @@ import json
 import os
 import re
 import sys
+import threading
 import traceback
+import urllib.error
+import urllib.request
+import webbrowser
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -45,12 +49,56 @@ from tkinterdnd2 import DND_FILES, TkinterDnD
 
 
 APP_TITLE = "EDMS DataBridge"
+GITHUB_REPO = "AshKapow/EDMS-DataBridge"
+GITHUB_RELEASES_PAGE = f"https://github.com/{GITHUB_REPO}/releases/latest"
 
 
 def resource_path(relative_path: str) -> Path:
     """Resolve a bundled asset path, in both dev mode and a PyInstaller onefile build."""
     base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
     return base_path / relative_path
+
+
+def load_version() -> str:
+    """Read the app's own version from the bundled VERSION file. Falls
+    back to "unknown" rather than raising - a missing version string
+    shouldn't ever be the reason the app won't start."""
+    try:
+        return resource_path("VERSION").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
+
+
+def parse_version(version: str) -> tuple:
+    """"v1.2.3" or "1.2.3" -> (1, 2, 3), for comparing two semver strings.
+    Non-numeric/malformed parts become 0 rather than raising, since this
+    also has to handle whatever a GitHub release happens to be tagged."""
+    parts = version.strip().lstrip("vV").split(".")
+    parts = (parts + ["0", "0", "0"])[:3]
+
+    def to_int(p):
+        try:
+            return int(p)
+        except ValueError:
+            return 0
+
+    return tuple(to_int(p) for p in parts)
+
+
+def get_latest_release_version(timeout: float = 3.0):
+    """Ask GitHub for the latest release's tag name. Returns None on any
+    failure at all (no network, GitHub unreachable, rate-limited, no
+    releases yet, ...) - this is a best-effort courtesy check that must
+    never be the reason the app fails to start or hangs."""
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    try:
+        request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        tag = data.get("tag_name")
+        return tag if isinstance(tag, str) and tag else None
+    except (urllib.error.URLError, TimeoutError, ValueError, OSError):
+        return None
 
 
 def log_dir() -> Path:
@@ -649,14 +697,25 @@ class App(TkinterDnD.Tk):
         )
         self.status_label.pack(pady=(20, 0))
 
+        self._version = load_version()
+
         ttk.Label(
             self,
-            text="Built for EDMS by Ash Kapow",
+            text=f"EDMS DataBridge v{self._version} · Built for EDMS by Ash Kapow",
             font=("Segoe UI", 8),
             foreground="gray50",
         ).pack(side="bottom", pady=(0, 10))
 
+        self.update_notice_label = ttk.Label(
+            self, text="", foreground="#1a5fb4", cursor="hand2",
+            wraplength=self.WINDOW_WIDTH - 40, justify="center",
+        )
+        self.update_notice_label.bind("<Button-1>", lambda e: webbrowser.open(GITHUB_RELEASES_PAGE))
+        # Not packed yet - stays invisible/zero-height until an update is
+        # actually found, so nothing shifts on startup in the normal case.
+
         self._fit_window_to_content()
+        self._check_for_update_async()
 
     def _set_status(self, text):
         """Update the status text and resize the window's height to fit it -
@@ -669,6 +728,26 @@ class App(TkinterDnD.Tk):
     def _fit_window_to_content(self):
         self.update_idletasks()
         self.geometry(f"{self.WINDOW_WIDTH}x{self.winfo_reqheight()}")
+
+    def _check_for_update_async(self):
+        """Best-effort, non-blocking check for a newer release. Runs on a
+        background thread so a slow/unreachable network can never delay
+        startup; silently does nothing if the check fails or finds
+        nothing newer (see get_latest_release_version())."""
+
+        def worker():
+            latest = get_latest_release_version()
+            if latest and parse_version(latest) > parse_version(self._version):
+                self.after(0, self._show_update_notice, latest)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _show_update_notice(self, latest_version):
+        self.update_notice_label.config(
+            text=f"A newer version ({latest_version}) is available — click to download"
+        )
+        self.update_notice_label.pack(side="bottom", pady=(0, 4))
+        self._fit_window_to_content()
 
     def handle_upload_zip(self):
         filepath = filedialog.askopenfilename(

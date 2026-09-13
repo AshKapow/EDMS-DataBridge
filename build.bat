@@ -10,7 +10,15 @@ if exist "%~dp0.venv\Scripts\activate.bat" (
     call "%~dp0.venv\Scripts\activate.bat"
 )
 
-pyinstaller --onefile --windowed --name "EDMSDataBridge" --version-file version_info.txt --icon assets\logo.ico --add-data "assets;assets" edms_databridge.py
+python generate_version_info.py
+if errorlevel 1 (
+    echo.
+    echo Failed to generate version_info.txt from VERSION - see the error above.
+    pause
+    exit /b 1
+)
+
+pyinstaller --onefile --windowed --name "EDMSDataBridge" --version-file version_info.txt --icon assets\logo.ico --add-data "assets;assets" --add-data "VERSION;." edms_databridge.py
 
 if errorlevel 1 (
     echo.

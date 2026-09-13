@@ -27,8 +27,12 @@ jobs:
   build:
     needs: test
     runs-on: windows-latest
+    permissions:
+      contents: write # needed to create a tag/release on a version bump
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history/tags, needed for the version-bump check below
 
       - uses: actions/setup-python@v7
         with:
@@ -37,8 +41,11 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt pyinstaller
 
+      - name: Generate version_info.txt from VERSION
+        run: python generate_version_info.py
+
       - name: Build exe
-        run: pyinstaller --onefile --windowed --name "EDMSDataBridge" --version-file version_info.txt --icon assets\logo.ico --add-data "assets;assets" edms_databridge.py
+        run: pyinstaller --onefile --windowed --name "EDMSDataBridge" --version-file version_info.txt --icon assets\logo.ico --add-data "assets;assets" --add-data "VERSION;." edms_databridge.py
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v7
@@ -46,3 +53,30 @@ jobs:
           name: EDMSDataBridge-exe
           path: dist/EDMSDataBridge.exe
           retention-days: 14
+
+      # Releases only happen on main, and only when VERSION names a version
+      # that doesn't have a release yet - most pushes won't bump it, so
+      # most runs skip straight past this.
+      - name: Check whether VERSION is a new release
+        if: github.ref == 'refs/heads/main'
+        id: version
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $tag = "v$version"
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          if (git tag -l $tag) {
+            "is_new=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "is_new=true" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Create GitHub release
+        if: github.ref == 'refs/heads/main' && steps.version.outputs.is_new == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          gh release create ${{ steps.version.outputs.tag }}
+          dist/EDMSDataBridge.exe
+          --title "${{ steps.version.outputs.tag }}"
+          --generate-notes

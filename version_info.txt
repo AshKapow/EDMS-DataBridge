@@ -1,6 +1,7 @@
-# Windows file-properties metadata for the built exe (Explorer > Properties > Details).
-# Passed to PyInstaller via --version-file. Not Python that's imported anywhere -
-# PyInstaller evaluates this file itself.
+# Windows file-properties metadata for the built exe
+# (Explorer > Properties > Details). GENERATED from VERSION by
+# generate_version_info.py - don't edit by hand, edit VERSION and
+# re-run the generator instead.
 VSVersionInfo(
   ffi=FixedFileInfo(
     filevers=(0, 1, 0, 0),
