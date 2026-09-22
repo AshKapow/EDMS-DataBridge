@@ -122,11 +122,20 @@ def test_save_sheets_as_workbooks_writes_one_file_per_sheet(tmp_path):
     import pandas as pd
 
     sheets = process_data({"patients": [{"id": 1}], "shifts": [{"id": 2}, {"id": 3}]})
-    paths = save_sheets_as_workbooks(sheets, tmp_path / "spreadsheets")
-    assert sorted(p.name for p in paths) == ["patients.xlsx", "shifts.xlsx"]
-    workbook = pd.read_excel(tmp_path / "spreadsheets" / "shifts.xlsx", sheet_name=None)
-    assert list(workbook.keys()) == ["shifts"]
-    assert len(workbook["shifts"]) == 2
+    paths = save_sheets_as_workbooks(sheets, tmp_path)
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in paths) == [
+        "Patients/Patients.xlsx",
+        "Shifts/Shifts.xlsx",
+    ]
+    workbook = pd.read_excel(tmp_path / "Shifts" / "Shifts.xlsx", sheet_name=None)
+    assert list(workbook.keys()) == ["Shifts"]
+    assert len(workbook["Shifts"]) == 2
+
+
+def test_save_sheets_as_workbooks_uses_readable_folder_names(tmp_path):
+    sheets = process_data({"mandatorytrainings": [{"id": 1}]})
+    paths = save_sheets_as_workbooks(sheets, tmp_path)
+    assert paths == [tmp_path / "Mandatory Training Records" / "Mandatory Training Records.xlsx"]
 
 @pytest.mark.parametrize("bad_data", ["just a string", 42, None])
 def test_process_data_rejects_non_list_non_dict_input(bad_data):
@@ -375,10 +384,16 @@ def test_pdf_path_for_patients_is_flat_and_never_uses_the_name():
     assert stem == "PTS Patient PKX7M2R4A"
 
 
-def test_pdf_path_for_unknown_document_entity_falls_back_to_created_at():
+def test_pdf_path_for_unverified_document_entity_is_dated_by_created_at():
     folder, stem = pdf_path_for("paperpcrs", {"createdAt": "2026-01-05T10:00:00Z"})
-    assert folder == Path("Paper PCR") / "2026" / "01 - January"
+    assert folder == Path("Paper PCRs") / "2026" / "01 - January"
     assert stem == "2026-01-05 Paper PCR"
+
+
+def test_pdf_path_for_unknown_entity_falls_back_to_display_name():
+    folder, stem = pdf_path_for("somenewentity", {"createdAt": "2026-01-05T10:00:00Z"})
+    assert folder == Path("Somenewentity") / "2026" / "01 - January"
+    assert stem == "2026-01-05 Somenewentity"
 
 
 def test_record_date_converts_utc_to_local_time():
@@ -416,11 +431,11 @@ def test_generate_pdfs_writes_one_pdf_per_record(tmp_path):
     }
     counts = generate_pdfs(data, tmp_path)
     assert counts == {"epcrs": 2}
-    pdf_dir = tmp_path / "pdfs" / "ePCRs" / "2026" / "08 - August"
+    pdf_dir = tmp_path / "ePCRs" / "2026" / "08 - August"
     pdfs = sorted(pdf_dir.glob("*.pdf"))
     assert [p.name for p in pdfs] == ["2026-08-21 ePCR E001.pdf", "2026-08-22 ePCR E002.pdf"]
     assert pdfs[0].read_bytes().startswith(b"%PDF")
-    assert not (tmp_path / "pdfs" / "employees").exists()
+    assert not (tmp_path / "Employees").exists()
 
 
 def test_generate_pdfs_dedupes_filename_collisions(tmp_path):
@@ -431,7 +446,7 @@ def test_generate_pdfs_dedupes_filename_collisions(tmp_path):
         ]
     }
     generate_pdfs(data, tmp_path)
-    pdf_dir = tmp_path / "pdfs" / "Audits" / "2026" / "09 - September"
+    pdf_dir = tmp_path / "Audits" / "2026" / "09 - September"
     names = sorted(p.name for p in pdf_dir.glob("*.pdf"))
     assert names == ["2026-09-10 Audit (2).pdf", "2026-09-10 Audit.pdf"]
 
@@ -565,13 +580,19 @@ def test_completed_forms_are_document_entities():
 def test_every_document_entity_has_pdf_naming():
     from edms_databridge import PDF_NAMING
 
-    # Entities with 0 records in the demo export fall back to a generic
-    # createdAt naming; every entity with real data has a deliberate one.
-    unverified = {
-        "paperpcrs", "medicalassessments", "occupationalhealths", "uninjuredreports",
-        "imagingrequests", "appraisals", "complexdecisions", "peaactions",
-    }
-    assert DOCUMENT_ENTITIES - unverified <= set(PDF_NAMING)
+    assert DOCUMENT_ENTITIES <= set(PDF_NAMING)
+
+
+def test_output_folder_names_are_unique_across_all_entities():
+    # PDFs and spreadsheets share one flat list of folders at the output
+    # root, so two record types landing in the same folder would silently
+    # mix their files together.
+    from edms_databridge import PDF_NAMING, TABLE_FOLDER_NAMES, entity_folder_name
+
+    entities = set(PDF_NAMING) | set(TABLE_FOLDER_NAMES)
+    assert not set(PDF_NAMING) & set(TABLE_FOLDER_NAMES)
+    names = [entity_folder_name(e).lower() for e in entities]
+    assert len(names) == len(set(names))
 
 
 def test_every_document_entity_has_a_display_name():
