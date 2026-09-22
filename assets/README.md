@@ -3,11 +3,11 @@ DataBridge-specific mark generated with Pillow (see below) since the
 official EDMS mark alone was too abstract to represent what this specific
 tool does, and doesn't need to double as an icon for it.
 
-- `logo.png` — the official EDMS "ED" circle mark, resized to 96x96,
+- `logo.png` - the official EDMS "ED" circle mark, resized to 96x96,
   shown at the top of the app window (the in-app header only). Loaded
   automatically by `load_logo_image()` in `edms_databridge.py`; the app
   falls back to a plain text title if this file is ever missing.
-- `logo.ico` — a single bold document icon (not the "ED" mark),
+- `logo.ico` - a single bold document icon (not the "ED" mark),
   representing the file this tool produces for you. Saved as a
   multi-resolution icon (16/24/32/48/64/128/256px) and used everywhere
   *except* the in-app header: the title bar, taskbar, and the built
@@ -19,12 +19,12 @@ tool does, and doesn't need to double as an icon for it.
   An earlier version tried to show JSON braces turning into the document
   via two cards and an arrow, but that much detail became an unreadable
   blob once actually shrunk to 16-32px (the sizes Windows renders this
-  icon at) — the single document shape reads clearly at every size.
-- `source/` — everything needed to regenerate the above:
-  - `edms-icon-source.jpg` — the original, unedited file EDMS provided
+  icon at) - the single document shape reads clearly at every size.
+- `source/` - everything needed to regenerate the above:
+  - `edms-icon-source.jpg` - the original, unedited file EDMS provided
     (-> `logo.png`; `generate_databridge_icon.py` also samples its
     colors from it).
-  - `generate_databridge_icon.py` — regenerates `logo.ico`.
+  - `generate_databridge_icon.py` - regenerates `logo.ico`.
 
 Everything in this folder is bundled into the `.exe` (`--add-data
 "assets;assets"`), so anything that's only for docs - e.g. the README's
