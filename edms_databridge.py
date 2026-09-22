@@ -351,15 +351,18 @@ def save_as_excel(sheets: dict, output_path: str):
 
 
 def save_sheets_as_workbooks(sheets: dict, output_dir) -> list:
-    """Save each sheet as its own single-sheet workbook in output_dir, named
-    after the sheet - one file per entity is easier to find and open than
-    one workbook with 60+ tabs. Returns the paths written."""
+    """Save each sheet as its own single-sheet workbook, in a folder of its
+    own named for the entity (e.g. output_dir/Shifts/Shifts.xlsx) - the
+    same one-folder-per-record-type layout the PDFs use, so the output
+    root is one consistent list of folders. Returns the paths written."""
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
     paths = []
     for sheet_name, df in sheets.items():
-        path = output_dir / f"{sanitize_filename(sheet_name)}.xlsx"
-        save_as_excel({sheet_name: df}, str(path))
+        name = sanitize_filename(entity_folder_name(sheet_name))
+        folder = output_dir / name
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{name}.xlsx"
+        save_as_excel({name[:31]: df}, str(path))  # Excel sheet name limit
         paths.append(path)
     return paths
 
@@ -495,7 +498,7 @@ def sanitize_filename(name: str) -> str:
 
 class PdfNaming(NamedTuple):
     """How one document entity's PDFs are filed and named, e.g.
-    pdfs/CAD Incidents/2026/09 - September/2026-09-11 CAD 1109262001.pdf.
+    CAD Incidents/2026/09 - September/2026-09-11 CAD 1109262001.pdf.
 
     date_field (a dotted path into the record) is when the thing actually
     happened - not createdAt where there's something better, since a
@@ -533,7 +536,126 @@ PDF_NAMING = {
     "audits": PdfNaming("Audits", "Audit", "date"),
     "medicineaudits": PdfNaming("Medicine Audits", "Medicine Audit", "createdAt", "originalTag"),
     "patientfeedbacks": PdfNaming("Patient Feedback", "Patient Feedback"),
+    # 0 records in the demo export, so only createdAt to go on for now.
+    "paperpcrs": PdfNaming("Paper PCRs", "Paper PCR"),
+    "medicalassessments": PdfNaming("Medical Assessments", "Medical Assessment"),
+    "occupationalhealths": PdfNaming("Occupational Health Records", "Occupational Health"),
+    "uninjuredreports": PdfNaming("Uninjured Person Reports", "Uninjured Person Report"),
+    "imagingrequests": PdfNaming("Imaging Requests", "Imaging Request"),
+    "appraisals": PdfNaming("Appraisals", "Appraisal"),
+    "complexdecisions": PdfNaming("Complex Decisions", "Complex Decision"),
+    "peaactions": PdfNaming("PEA Actions", "PEA Action"),
 }
+
+# Output folder (and workbook) names for the tabular entities - raw
+# lowercase filename stems like "mandatorytrainings" have no word
+# boundaries for humanize_field_name() to recover. Covers every entity in
+# the demo export; anything new falls back to humanize_field_name().
+TABLE_FOLDER_NAMES = {
+    "announcements": "Announcements",
+    "assets": "Assets",
+    "auditdescriptions": "Audit Templates",
+    "audittrails": "Audit Trails",
+    "baselocations": "Base Locations",
+    "cadcalltriagecomplaints": "CAD Call Triage Complaints",
+    "cadresources": "CAD Resources",
+    "cals": "CALs",
+    "commandlogs": "Command Logs",
+    "comments": "Comments",
+    "companysettings": "Company Settings",
+    "contacts": "Contacts",
+    "controlleddrugaudits": "Controlled Drug Audits",
+    "controlrooms": "Control Rooms",
+    "coshhsheets": "COSHH Sheets",
+    "counters": "Counters",
+    "cpdlogs": "CPD Logs",
+    "cqccomplianceresponses": "CQC Compliance Responses",
+    "cqcevidenceitems": "CQC Evidence Items",
+    "cqcgaps": "CQC Gaps",
+    "crewvaults": "Crew Vault",
+    "dbsactions": "DBS Actions",
+    "dbschecks": "DBS Checks",
+    "defects": "Defects",
+    "documents": "Documents",
+    "drivinglicencechecks": "Driving Licence Checks",
+    "employees": "Employees",
+    "emptemplates": "EMP Templates",
+    "epcraudits": "ePCR Audits",
+    "epcrsnapshots": "ePCR Snapshots",
+    "eventcqcexposureassessments": "Event CQC Exposure Assessments",
+    "eventexpenses": "Event Expenses",
+    "expenses": "Expenses",
+    "governanceactions": "Governance Actions",
+    "hospitals": "Hospitals",
+    "idcards": "ID Cards",
+    "incidentwitnessrequests": "Incident Witness Requests",
+    "invoices": "Invoices",
+    "logs": "Logs",
+    "maintenancelogs": "Maintenance Logs",
+    "majortraumanetworks": "Major Trauma Networks",
+    "makereadyinventories": "Make Ready Inventories",
+    "makereadyloadlists": "Make Ready Load Lists",
+    "makereadyreports": "Make Ready Reports",
+    "mandatorytrainingcourses": "Mandatory Training Courses",
+    "mandatorytrainings": "Mandatory Training Records",
+    "medicinedescriptions": "Medicine Descriptions",
+    "medicinelocations": "Medicine Locations",
+    "medicinelogs": "Medicine Logs",
+    "medicines": "Medicines",
+    "mots": "MOTs",
+    "organisations": "Organisations",
+    "patientfeedbackinvites": "Patient Feedback Invites",
+    "payruns": "Pay Runs",
+    "pcraccesslogs": "PCR Access Logs",
+    "pcrsharecodes": "PCR Share Codes",
+    "pgds": "PGDs",
+    "policies": "Policies",
+    "policydescriptions": "Policy Descriptions",
+    "ptsbookings": "PTS Bookings",
+    "ptscontracts": "PTS Contracts",
+    "ptsdispatcherpresences": "PTS Dispatcher Presences",
+    "ptsduties": "PTS Duties",
+    "ptsjourneys": "PTS Journeys",
+    "ptsportalchatrequests": "PTS Portal Chat Requests",
+    "ptsquotes": "PTS Quotes",
+    "ptstariffs": "PTS Tariffs",
+    "qualifications": "Qualifications",
+    "quotes": "Quotes",
+    "regulatedactivities": "Regulated Activities",
+    "resourcechatmessages": "Resource Chat Messages",
+    "restockclaims": "Restock Claims",
+    "risks": "Risk Register",
+    "rosters": "Rosters",
+    "safetyalerts": "Safety Alerts",
+    "shiftapplications": "Shift Applications",
+    "shifts": "Shifts",
+    "smslogs": "SMS Logs",
+    "sops": "SOPs",
+    "staffavailabilities": "Staff Availability",
+    "staffpayinvoices": "Staff Pay Invoices",
+    "statementofpurposes": "Statements of Purpose",
+    "stockcatalogitems": "Stock Catalogue Items",
+    "subcontractors": "Subcontractors",
+    "tasks": "Tasks",
+    "timetrackers": "Time Trackers",
+    "treatmentassignments": "Treatment Assignments",
+    "treatmentlocations": "Treatment Locations",
+    "treatmentzones": "Treatment Zones",
+    "usernotifications": "User Notifications",
+    "users": "Users",
+    "vehicledeployments": "Vehicle Deployments",
+    "vehicles": "Vehicles",
+    "warddepartments": "Ward Departments",
+    "websitequeries": "Website Queries",
+}
+
+
+def entity_folder_name(entity_name: str) -> str:
+    """The output folder for an entity - PDFs and spreadsheets alike sit in
+    one flat list of record-type folders at the output root."""
+    if entity_name in DOCUMENT_ENTITIES or entity_name in PDF_NAMING:
+        return pdf_naming(entity_name).folder
+    return TABLE_FOLDER_NAMES.get(entity_name) or humanize_field_name(entity_name)
 
 
 def pdf_naming(entity_name: str) -> PdfNaming:
@@ -586,7 +708,7 @@ def record_reference(entity_name: str, record: dict, dotted: str):
 
 
 def pdf_path_for(entity_name: str, record: dict):
-    """Where (relative to the pdfs/ folder) one record's PDF goes, as
+    """Where (relative to the output folder) one record's PDF goes, as
     (folder, filename stem) - see PdfNaming. Collisions are resolved by
     the caller."""
     naming = pdf_naming(entity_name)
@@ -850,7 +972,7 @@ def render_record_pdf(entity_name: str, record: dict, output_path):
 
 def generate_pdfs(data: dict, output_dir) -> dict:
     """For every entity in DOCUMENT_ENTITIES present in `data`, render one
-    PDF per record under output_dir/pdfs/, filed and named per PDF_NAMING.
+    PDF per record under output_dir, filed and named per PDF_NAMING.
     Returns {entity: count} for entities that actually produced any PDFs."""
     output_dir = Path(output_dir)
     counts = {}
@@ -869,7 +991,7 @@ def generate_pdfs(data: dict, output_dir) -> dict:
                 if ref:
                     record = {**record, ref_field: ref}
             folder, stem = pdf_path_for(entity, record)
-            pdf_dir = output_dir / "pdfs" / folder
+            pdf_dir = output_dir / folder
             pdf_dir.mkdir(parents=True, exist_ok=True)
             pdf_path = pdf_dir / f"{stem}.pdf"
             n = 1
@@ -1055,7 +1177,7 @@ class App(TkinterDnD.Tk):
 
             if pdf_data or len(sheets) > 1:
                 # More than one output file, so the output is a folder
-                # (spreadsheets/ + pdfs/), not a single xlsx file.
+                # (one subfolder per record type), not a single xlsx file.
                 output_dir = filedialog.askdirectory(
                     title="Choose a folder to save the formatted output",
                     initialdir=str(default_dir),
@@ -1064,7 +1186,7 @@ class App(TkinterDnD.Tk):
                     self._set_status("Cancelled.")
                     return
                 output_dir = Path(output_dir)
-                save_sheets_as_workbooks(sheets, output_dir / "spreadsheets")
+                save_sheets_as_workbooks(sheets, output_dir)
                 pdf_counts = generate_pdfs(pdf_data, output_dir)
                 result_location = str(output_dir)
             else:

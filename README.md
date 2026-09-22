@@ -52,9 +52,11 @@ directly.
 
    ![The EDMS DataBridge window, with Upload ZIP File and Upload Folder buttons](docs/screenshot.png)
 
-**5. Choose a folder to save into.** The app fills it with a
-`spreadsheets` folder and a `pdfs` folder (see below for what goes
-where). It's easiest to pick or create an empty folder for this.
+**5. Choose a folder to save into.** The app fills it with one folder
+per type of record - Audits, CAD Incidents, Shifts, Vehicles, and so on
+(see below for what's inside them). There can be 60+ of these, so
+**create a new, empty folder** for them rather than saving straight into
+Documents or Downloads.
 (If you upload a single JSON file with just one table in it, you'll be
 asked for a filename instead and get back one Excel file.)
 
@@ -66,38 +68,51 @@ app.
 
 ## What you'll get back
 
-You choose a folder, and the app fills it with two folders:
+Inside the folder you chose, you'll find one folder per type of record,
+named after it (e.g. `Audits`, `CAD Incidents`, `Meetings`, `Shifts`).
+Record types with no records at all in your export are skipped, so
+you won't get any empty folders. Each folder holds one of two things:
 
-- **`spreadsheets/`** - one Excel file per record type (staff, shifts,
-  vehicles, training records, and so on), e.g. `spreadsheets/shifts.xlsx`.
-  Record types with no records at all in your export are skipped rather
-  than giving you an empty file.
-- **`pdfs/`** - record types that read much better as an actual document
-  (patient records, incident reports, completed checklists, ...) become
-  **one PDF per record** instead, filed by year and month with the date
+- **A single Excel file** for list-style records (staff, shifts,
+  vehicles, training records, and so on), named after its folder - e.g.
+  `Shifts/Shifts.xlsx`.
+- **One PDF per record** for record types that read much better as an
+  actual document (patient records, incident reports, completed
+  checklists, ...). These are filed by year and month, with the date
   first so they sort in date order, e.g.
-  `pdfs/CAD Incidents/2026/09 - September/2026-09-11 CAD 1109262001.pdf`.
+  `CAD Incidents/2026/09 - September/2026-09-11 CAD 1109262001.pdf`.
   Filenames never include a person's name - patient records are named
   by their patient ID.
 
-| Record type | Where its PDFs go |
+These are the record types that become PDFs:
+
+| Record type | Folder |
 |---|---|
-| EPCR (electronic patient care record) | `pdfs/ePCRs/` |
-| Incident Report | `pdfs/Incident Reports/` |
-| CAD Incident | `pdfs/CAD Incidents/` |
-| PTS Patient Record | `pdfs/PTS Patients/` (not split by date) |
-| PTS Risk Assessment | `pdfs/PTS Risk Assessments/` |
-| Employee Application | `pdfs/Employee Applications/` |
-| Speak Up Concern | `pdfs/Speak Up Concerns/` |
-| Meeting Minutes | `pdfs/Meetings/` |
-| Event Plan | `pdfs/Events/` |
-| Vehicle Daily Inspection | `pdfs/Vehicle Daily Inspections/` |
-| Vehicle Clean Record | `pdfs/Vehicle Cleans/` |
-| Vehicle Safety Check | `pdfs/Vehicle Safety Checks/` |
-| Audit | `pdfs/Audits/` |
-| Medicine Audit | `pdfs/Medicine Audits/` |
-| Patient Feedback | `pdfs/Patient Feedback/` |
-| Paper PCR, Medical Assessment, Occupational Health Record, Uninjured Person Report, Imaging Request, Employee Appraisal, Complex Decision Record, PEA Action | a folder named after the record type |
+| EPCR (electronic patient care record) | `ePCRs` |
+| Incident Report | `Incident Reports` |
+| CAD Incident | `CAD Incidents` |
+| PTS Patient Record | `PTS Patients` (not split by date) |
+| PTS Risk Assessment | `PTS Risk Assessments` |
+| Employee Application | `Employee Applications` |
+| Speak Up Concern | `Speak Up Concerns` |
+| Meeting Minutes | `Meetings` |
+| Event Plan | `Events` |
+| Vehicle Daily Inspection | `Vehicle Daily Inspections` |
+| Vehicle Clean Record | `Vehicle Cleans` |
+| Vehicle Safety Check | `Vehicle Safety Checks` |
+| Audit | `Audits` |
+| Medicine Audit | `Medicine Audits` |
+| Patient Feedback | `Patient Feedback` |
+| Paper PCR | `Paper PCRs` |
+| Medical Assessment | `Medical Assessments` |
+| Occupational Health Record | `Occupational Health Records` |
+| Uninjured Person Report | `Uninjured Person Reports` |
+| Imaging Request | `Imaging Requests` |
+| Employee Appraisal | `Appraisals` |
+| Complex Decision Record | `Complex Decisions` |
+| PEA Action | `PEA Actions` |
+
+Everything else becomes a spreadsheet.
 
 A PDF whose date is missing goes in an `Undated` folder instead of a
 year/month one.
