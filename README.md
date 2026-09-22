@@ -175,7 +175,7 @@ false-positive check).
 Python + Tkinter + pandas/openpyxl/reportlab, packaged as a single
 unsigned `.exe` via PyInstaller (`--onefile --windowed`), chosen over
 C#/.NET or Electron for speed of iteration given the author's background,
-and because a single unsigned `.exe` is enough for an internal tool — no
+and because a single unsigned `.exe` is enough for an internal tool - no
 installer needed.
 
 Output is a mix of Excel (`.xlsx`, one file per tabular entity) and PDF
@@ -229,7 +229,7 @@ build.bat
 
 `build.bat` auto-activates `.venv` if it exists next to the script, so
 just run it after the dev setup above. It produces
-`dist\EDMSDataBridge.exe` — a single file with no dependencies. That's
+`dist\EDMSDataBridge.exe` - a single file with no dependencies. That's
 the file to hand to end users. They just double-click it, no Python
 install needed on their machine.
 
@@ -272,7 +272,7 @@ fails (no network, GitHub unreachable, etc).
 The in-app header shows the official EDMS "ED" mark (`assets/logo.png`).
 The title bar, taskbar, and the built exe's file icon use a different,
 DataBridge-specific mark (`assets/logo.ico`): a single bold document
-icon, representing the file this tool produces — see
+icon, representing the file this tool produces - see
 [assets/README.md](assets/README.md) for provenance and generation
 details.
 
@@ -281,7 +281,7 @@ details.
 `main` is protected: changes go through a pull request with CI passing,
 rather than a direct push, even for the repo owner. Required approvals
 is set to 0 rather than 1, since GitHub never allows a PR author to
-approve their own PR — with a single collaborator, requiring 1 would
+approve their own PR - with a single collaborator, requiring 1 would
 make every PR permanently unmergeable without an admin override.
 
 ## Project structure
@@ -307,14 +307,14 @@ make every PR permanently unmergeable without an admin override.
 
 ## Open questions / next steps
 
-1. **Bespoke per-entity polish** — `process_data()` still does a generic
+1. **Bespoke per-entity polish** - `process_data()` still does a generic
    flatten for every tabular entity: raw field names as column headers,
    no reordering, deeply-nested repeating sub-records (e.g. a vehicle's
    service history) flatten to numeric-indexed columns rather than a
    proper linked sheet. Worth doing per-entity once there's a reason to
    (see `DOCUMENT_ENTITIES`'s more polished treatment for the document
    entities as the template for what "worth it" looks like).
-2. **File attachments aren't handled at all** — confirmed via AmbuNet's own
+2. **File attachments aren't handled at all** - confirmed via AmbuNet's own
    Data Export Policy that the real export includes an "object storage"/
    document bucket of actual files (images, PDFs) alongside the JSON, and
    several entities (e.g. `meetings`, and formerly `policies`) reference
@@ -323,14 +323,14 @@ make every PR permanently unmergeable without an admin override.
    included in a `.json`-only export (e.g. images the user has seen
    directly, like ID card photos) are silently skipped.
 3. **Bespoke per-entity polish for the remaining tabular entities that
-   deserve it** — e.g. `policies`/`sops`/`pgds` (moved out of
+   deserve it** - e.g. `policies`/`sops`/`pgds` (moved out of
    `DOCUMENT_ENTITIES`, see below) are really acknowledgment-tracking
    records; a "who's acknowledged the latest version" summary view would
    be more useful than the raw flatten they get today.
-4. **Distribution/signing** — settled: staying unsigned. SmartScreen's
+4. **Distribution/signing** - settled: staying unsigned. SmartScreen's
    "More info -> Run anyway" is an acceptable one-time instruction for
    internal staff; a certificate isn't worth the hassle for one app.
-5. **Clean-machine testing** — the built `.exe` hasn't been tested on a
+5. **Clean-machine testing** - the built `.exe` hasn't been tested on a
    machine without dev tools/antivirus false-positive checks yet.
 
 `DOCUMENT_ENTITIES` classification has now been reviewed against the real

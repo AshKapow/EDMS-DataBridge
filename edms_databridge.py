@@ -1109,7 +1109,7 @@ class App(TkinterDnD.Tk):
 
     def _show_update_notice(self, latest_version):
         self.update_notice_label.config(
-            text=f"A newer version ({latest_version}) is available — click to download"
+            text=f"A newer version ({latest_version}) is available - click to download"
         )
         self.update_notice_label.pack(side="bottom", pady=(0, 4))
         self._fit_window_to_content()
