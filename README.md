@@ -25,11 +25,21 @@ to follow.
 [latest release](https://github.com/AshKapow/EDMS-DataBridge/releases/latest).
 It's a single file - no installer, nothing else to set up.
 
-**2. First time opening it, Windows will show a blue "Windows protected
-your PC" warning.** This is expected - the app isn't digitally signed
-(a deliberate decision, not a mistake), so Windows warns about anything
-unfamiliar. Click **More info**, then **Run anyway**. You'll only see
-this once.
+**2. First time opening it, Windows will show a "Windows protected your
+PC" warning.** This is expected and it's safe to continue - the app
+isn't digitally signed (a deliberate decision, not a mistake), so
+Windows warns about any app it doesn't recognise. You'll only see this
+once.
+
+   1. Click **More info** (don't click **Don't run**):
+
+      ![The "Windows protected your PC" warning, with the More info link under the message](<docs/windows-protected-(1).png>)
+
+   2. Check it says **Application: EDMSDataBridge.exe** (it will also
+      say "Unknown publisher" - that's expected), then click
+      **Run anyway**:
+
+      ![The same warning after clicking More info, showing Application: EDMSDataBridge.exe and a Run anyway button](<docs/windows-protected-(2).png>)
 
 **3. Get your Ambunet export.** This is the zip file (or a folder you've
 already unzipped) that Ambunet gives you when you request your data.
