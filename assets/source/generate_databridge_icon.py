@@ -71,9 +71,8 @@ def render(size: int) -> Image.Image:
 
 if __name__ == "__main__":
     full = render(1024)
-    full.save(REPO_ROOT / "assets" / "source" / "databridge-icon-generated.png")
     full.save(
         REPO_ROOT / "assets" / "logo.ico",
         sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
     )
-    print("Wrote assets/logo.ico and assets/source/databridge-icon-generated.png")
+    print("Wrote assets/logo.ico")
