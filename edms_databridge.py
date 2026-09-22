@@ -5,17 +5,19 @@ Author: Ash Kapow
 Built for: EDMS
 
 A simple Windows GUI tool: user uploads a JSON export (e.g. from Ambunet)
-- a zip, a folder, or a single JSON file - and the app converts it into a
-clean Excel file they can actually use.
+- a zip, a folder, or a single JSON file - and the app converts it into
+clean Excel files (and PDFs for document-shaped records) they can
+actually use.
 
 Ambunet's real export is a zip (containing a folder of one *.json file
 per entity, e.g. employees.json, incidents.json, epcrs.json) in MongoDB
 Extended JSON format (IDs as {"$oid": ...}, dates as {"$date": ...}, etc).
 `clean_data()` unwraps that into plain values and drops known-sensitive
 fields (e.g. password hashes) before `process_data()` flattens each
-entity into its own sheet. `process_data()` is still a GENERIC flatten
-per entity, not bespoke per-entity column mapping/renaming - see the
-README's open questions for what's still deliberately deferred.
+entity into its own sheet (each saved as its own workbook).
+`process_data()` is still a GENERIC flatten per entity, not bespoke
+per-entity column mapping/renaming - see the README's open questions for
+what's still deliberately deferred.
 
 --- Build into a standalone .exe ---
 Run build.bat (see that file for the exact pyinstaller command/flags).
@@ -35,6 +37,8 @@ import webbrowser
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import NamedTuple
+from xml.sax.saxutils import escape
 
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -323,6 +327,10 @@ def process_data(data):
         list_keys = {k: v for k, v in data.items() if isinstance(v, list)}
         if list_keys:
             for key, records in list_keys.items():
+                if not records:
+                    # ~40% of the entities in a real export have no records
+                    # at all - a sheet of nothing is just noise to wade past.
+                    continue
                 sheet_name = str(key)[:31]  # Excel sheet name limit
                 sheets[sheet_name] = pd.json_normalize(records)
         else:
@@ -340,6 +348,20 @@ def save_as_excel(sheets: dict, output_path: str):
     with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
         for sheet_name, df in sheets.items():
             df.to_excel(writer, sheet_name=sheet_name, index=False)
+
+
+def save_sheets_as_workbooks(sheets: dict, output_dir) -> list:
+    """Save each sheet as its own single-sheet workbook in output_dir, named
+    after the sheet - one file per entity is easier to find and open than
+    one workbook with 60+ tabs. Returns the paths written."""
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    for sheet_name, df in sheets.items():
+        path = output_dir / f"{sanitize_filename(sheet_name)}.xlsx"
+        save_as_excel({sheet_name: df}, str(path))
+        paths.append(path)
+    return paths
 
 
 # A4 page width (21cm) minus the 1.5cm left/right margins used in
@@ -366,6 +388,17 @@ DOCUMENT_ENTITIES = {
     # a cardiac arrest rhythm - see the nested cardiacArrest field on
     # epcrs), so this is an incident-style case record, not a checklist.
     "peaactions",
+    # Completed forms: each record is one filled-in checklist/audit, whose
+    # answers are nested lists/dicts that flatten into dozens of unreadable
+    # columns (78 for vehiclesafetychecks) or whole lists crammed into one
+    # cell. As a PDF they read like the form that was filled in, which is
+    # also what's wanted as CQC evidence.
+    "vdis", "vehiclecleans", "vehiclesafetychecks", "audits", "medicineaudits",
+    # Case-style records with free-text narrative and a follow-up trail.
+    "patientfeedbacks",
+    # Each event is really its event medical plan (ops plan, med plan,
+    # risk assessment) - 110 columns flattened, one document as a PDF.
+    "events",
     # The following have 0 records in the demo export, so couldn't be
     # directly verified - kept as documents on domain reasoning (the same
     # reasoning that held up for every entity above that WAS verifiable),
@@ -382,8 +415,10 @@ DOCUMENT_ENTITIES = {
 # real document text - which this tool doesn't fetch. A PDF built from just
 # that metadata isn't a useful "document", so these are tabular instead.
 #
-# "vdis" was also removed - confirmed via research to be Vehicle Daily
-# Inspection, a routine per-shift checklist, not a narrative record.
+# Still tabular after review: crewvaults (its content is stored as raw
+# HTML, which needs real HTML-to-PDF layout to be worth it), invoices and
+# quotes (no stored invoice total, so a PDF would look official but be
+# incomplete - and finance will want to filter/sum them anyway).
 
 # PDF document titles for each entity in DOCUMENT_ENTITIES. These are raw
 # lowercase filename stems (e.g. "employeeapplications"), not camelCase,
@@ -407,6 +442,13 @@ ENTITY_DISPLAY_NAMES = {
     "complexdecisions": "Complex Decision Record",
     "meetings": "Meeting Minutes",
     "peaactions": "PEA Action (Pulseless Electrical Activity)",
+    "vdis": "Vehicle Daily Inspection",
+    "vehiclecleans": "Vehicle Clean Record",
+    "vehiclesafetychecks": "Vehicle Safety Check",
+    "audits": "Audit",
+    "medicineaudits": "Medicine Audit",
+    "patientfeedbacks": "Patient Feedback",
+    "events": "Event Plan",
 }
 
 
@@ -430,6 +472,10 @@ def humanize_field_name(key: str) -> str:
     """Turn a camelCase/snake_case JSON field name into a human-readable
     label, e.g. "firstName" -> "First Name", "nhsNumber" -> "NHS Number".
     Meant for a non-technical reader - raw field names are not."""
+    if " " in key:
+        # Already human-written, e.g. a checklist item used as a key like
+        # "Front Brake Pads (Wear/Condition)" - re-casing would only mangle it.
+        return key
     spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", key).replace("_", " ")
     words = [w for w in spaced.split(" ") if w]
     return " ".join(
@@ -447,33 +493,117 @@ def sanitize_filename(name: str) -> str:
     return cleaned[:120] or "record"
 
 
-def record_label(record: dict, index: int) -> str:
-    """Pick a human-friendly identifier for a record's PDF filename, trying
-    progressively more generic fallbacks since 22 different entity shapes
-    don't share one obvious "name" field."""
-    for suffix in ("number", "title", "name"):
-        for key, value in record.items():
-            if key.lower() in ("firstname", "lastname"):
-                continue  # handled by the combined-name checks below
-            # "...Number" fields aren't always strings (e.g. cadincidents'
-            # incidentNumber is a plain int) - accept str/int/float alike.
-            is_useful = isinstance(value, (str, int, float)) and value != ""
-            if key.lower().endswith(suffix) and is_useful:
-                return str(value)
-    demographics = record.get("demographics")
-    if isinstance(demographics, dict):
-        first = demographics.get("firstName") or ""
-        last = demographics.get("lastName") or ""
-        full_name = f"{first} {last}".strip()
-        if full_name:
-            return full_name
-    full_name = f"{record.get('firstName') or ''} {record.get('lastName') or ''}".strip()
-    if full_name:
-        return full_name
-    record_id = record.get("_id")
-    if isinstance(record_id, str) and record_id:
-        return record_id
-    return f"record_{index + 1}"
+class PdfNaming(NamedTuple):
+    """How one document entity's PDFs are filed and named, e.g.
+    pdfs/CAD Incidents/2026/09 - September/2026-09-11 CAD 1109262001.pdf.
+
+    date_field (a dotted path into the record) is when the thing actually
+    happened - not createdAt where there's something better, since a
+    record is often written up after the fact - and drives both the
+    Year/Month folders and the filename's leading date, so Explorer sorts
+    chronologically. None means the record isn't an event (e.g. a patient)
+    and is filed flat. ref_field is the Ambunet reference, so a PDF can be
+    matched back to its record; None where there isn't one.
+
+    Deliberately never a person's name in the filename: filenames surface
+    in Windows search, recent files, OneDrive and email attachment names,
+    which is the wrong place for patient identities.
+    """
+    folder: str
+    prefix: str
+    date_field: str | None = "createdAt"
+    ref_field: str | None = None
+
+
+PDF_NAMING = {
+    "cadincidents": PdfNaming("CAD Incidents", "CAD", "createdAt", "incidentNumber"),
+    "incidents": PdfNaming("Incident Reports", "Incident", "incidentDate", "incidentNumber"),
+    "epcrs": PdfNaming("ePCRs", "ePCR", "incident.incidentDate", "epcrNumber"),
+    "meetings": PdfNaming("Meetings", "Meeting", "startTime", "title"),
+    "speakupconcerns": PdfNaming("Speak Up Concerns", "Speak Up", "createdAt", "referenceNumber"),
+    "ptsriskassessments": PdfNaming(
+        "PTS Risk Assessments", "PTS Risk Assessment", "visitDate", "assessmentType"
+    ),
+    "ptspatients": PdfNaming("PTS Patients", "PTS Patient", None, "patientID"),
+    "employeeapplications": PdfNaming("Employee Applications", "Employee Application"),
+    "events": PdfNaming("Events", "Event", "startDate", "title"),
+    "vdis": PdfNaming("Vehicle Daily Inspections", "VDI", "date"),
+    "vehiclecleans": PdfNaming("Vehicle Cleans", "Vehicle Clean", "start", "cleanType"),
+    "vehiclesafetychecks": PdfNaming("Vehicle Safety Checks", "Vehicle Safety Check", "testDate"),
+    "audits": PdfNaming("Audits", "Audit", "date"),
+    "medicineaudits": PdfNaming("Medicine Audits", "Medicine Audit", "createdAt", "originalTag"),
+    "patientfeedbacks": PdfNaming("Patient Feedback", "Patient Feedback"),
+}
+
+
+def pdf_naming(entity_name: str) -> PdfNaming:
+    """PDF_NAMING's entry for an entity, or a generic createdAt-dated one
+    for a document entity with no records yet to design a better one from."""
+    if entity_name in PDF_NAMING:
+        return PDF_NAMING[entity_name]
+    display = entity_display_name(entity_name)
+    return PdfNaming(display, display, "createdAt", None)
+
+
+def _get_path(record: dict, dotted: str):
+    value = record
+    for part in dotted.split("."):
+        if not isinstance(value, dict):
+            return None
+        value = value.get(part)
+    return value
+
+
+def record_date(record: dict, dotted: str):
+    """Parse an ISO date field (as clean_data() leaves them) into local
+    time - Ambunet stores UTC, and a 00:30 BST call belongs on the local
+    day, matching the date baked into its own incident number. None if
+    missing or unparseable."""
+    value = _get_path(record, dotted)
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.astimezone() if parsed.tzinfo else parsed
+
+
+def record_reference(entity_name: str, record: dict, dotted: str):
+    """The record's Ambunet reference as clean text, or None."""
+    value = _get_path(record, dotted)
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)) or value == "":
+        return None
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    ref = str(value).strip()
+    if entity_name == "cadincidents" and ref.isdigit():
+        # CAD numbers are DDMMYY + a 4-digit sequence, but Ambunet exports
+        # them as bare numbers, so a date before the 10th loses its
+        # leading zero (0409261004 -> 409261004). Put it back.
+        ref = ref.zfill(10)
+    return ref or None
+
+
+def pdf_path_for(entity_name: str, record: dict):
+    """Where (relative to the pdfs/ folder) one record's PDF goes, as
+    (folder, filename stem) - see PdfNaming. Collisions are resolved by
+    the caller."""
+    naming = pdf_naming(entity_name)
+    folder = Path(sanitize_filename(naming.folder))
+    stem = naming.prefix
+    if naming.ref_field:
+        ref = record_reference(entity_name, record, naming.ref_field)
+        if ref:
+            stem = f"{stem} {ref}"
+    if naming.date_field:
+        when = record_date(record, naming.date_field)
+        if when:
+            folder = folder / f"{when:%Y}" / f"{when:%m - %B}"
+            stem = f"{when:%Y-%m-%d} {stem}"
+        else:
+            folder = folder / "Undated"
+    return folder, sanitize_filename(stem)
 
 
 def _is_empty(value) -> bool:
@@ -493,15 +623,27 @@ def _cell_text(value) -> str:
         )
     if isinstance(value, list):
         return ", ".join(_cell_text(v) for v in value)
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))  # e.g. Ambunet's 2.208261002E+09 incident numbers
     return str(value)
+
+
+def _para(text: str, style, bold: bool = False) -> Paragraph:
+    """A Paragraph of literal text. reportlab parses Paragraph text as
+    markup, so raw record text containing anything tag-like (e.g. the HTML
+    stored in crewvaults.content) would otherwise crash the whole run."""
+    text = escape(text)
+    return Paragraph(f"<b>{text}</b>" if bold else text, style)
 
 
 def _details_table(rows, styles) -> Table:
     """A two-column Label / Value table for a section's scalar fields."""
     data = [
         [
-            Paragraph(f"<b>{label}</b>", styles["Normal"]),
-            Paragraph(_cell_text(value), styles["Normal"]),
+            _para(label, styles["Normal"], bold=True),
+            _para(_cell_text(value), styles["Normal"]),
         ]
         for label, value in rows
     ]
@@ -522,9 +664,25 @@ def _collect_keys(records: list) -> list:
     keys = []
     for record in records:
         for key in record.keys():
-            if key not in keys:
+            # A nested row's own database ID means nothing to a reader.
+            if key != "_id" and key not in keys:
                 keys.append(key)
     return keys
+
+
+def _as_item_rows(value: dict):
+    """If a dict is really a keyed list of same-shaped flat records - e.g. a
+    vehicle safety check's {"Brake Fluid Level": {"safe": ..., "advised":
+    ..., "comments": ...}, ...} - return it as rows for _records_table()
+    with the key as an "item" column. Otherwise None, and it stays a
+    subsection per key (one heading per checklist item is unreadable)."""
+    if len(value) < 2 or not all(isinstance(v, dict) and v for v in value.values()):
+        return None
+    shapes = {tuple(v.keys()) for v in value.values()}
+    flat = all(not isinstance(x, (dict, list)) for v in value.values() for x in v.values())
+    if len(shapes) != 1 or not flat:
+        return None
+    return [{"item": k, **v} for k, v in value.items()]
 
 
 def _records_table(records: list, styles) -> Table:
@@ -549,10 +707,10 @@ def _records_table(records: list, styles) -> Table:
 
 
 def _regular_records_table(records: list, keys: list, styles) -> Table:
-    header = [Paragraph(f"<b>{humanize_field_name(k)}</b>", styles["Normal"]) for k in keys]
+    header = [_para(humanize_field_name(k), styles["Normal"], bold=True) for k in keys]
     rows = [header]
     for record in records:
-        rows.append([Paragraph(_cell_text(record.get(k)), styles["Normal"]) for k in keys])
+        rows.append([_para(_cell_text(record.get(k)), styles["Normal"]) for k in keys])
 
     # Explicit equal-width columns rather than reportlab's auto-sizing: a
     # field with many distinct keys across records (seen in the real
@@ -581,14 +739,14 @@ def _transposed_column_label(record: dict, index: int) -> str:
 
 
 def _transposed_records_table(records: list, keys: list, styles) -> Table:
-    header = [Paragraph("<b>Field</b>", styles["Normal"])] + [
-        Paragraph(f"<b>{_transposed_column_label(r, i)}</b>", styles["Normal"])
+    header = [_para("Field", styles["Normal"], bold=True)] + [
+        _para(_transposed_column_label(r, i), styles["Normal"], bold=True)
         for i, r in enumerate(records)
     ]
     rows = [header]
     for key in keys:
-        row = [Paragraph(f"<b>{humanize_field_name(key)}</b>", styles["Normal"])]
-        row += [Paragraph(_cell_text(r.get(key)), styles["Normal"]) for r in records]
+        row = [_para(humanize_field_name(key), styles["Normal"], bold=True)]
+        row += [_para(_cell_text(r.get(key)), styles["Normal"]) for r in records]
         rows.append(row)
 
     label_col = 4 * cm
@@ -622,13 +780,19 @@ def _build_flowables(data: dict, styles, heading_style: str) -> list:
         if _is_empty(value):
             continue
         label = humanize_field_name(key)
-        if isinstance(value, dict):
+        item_rows = _as_item_rows(value) if isinstance(value, dict) else None
+        if item_rows:
             flush_details()
-            flowables.append(Paragraph(label, styles[heading_style]))
+            flowables.append(_para(label, styles[heading_style]))
+            flowables.append(_records_table(item_rows, styles))
+            flowables.append(Spacer(1, 0.3 * cm))
+        elif isinstance(value, dict):
+            flush_details()
+            flowables.append(_para(label, styles[heading_style]))
             flowables.extend(_build_flowables(value, styles, next_heading))
         elif isinstance(value, list) and isinstance(value[0], dict):
             flush_details()
-            flowables.append(Paragraph(label, styles[heading_style]))
+            flowables.append(_para(label, styles[heading_style]))
             flowables.append(_records_table(value, styles))
             flowables.append(Spacer(1, 0.3 * cm))
         else:
@@ -667,7 +831,7 @@ def render_record_pdf(entity_name: str, record: dict, output_path):
         topMargin=1.5 * cm, bottomMargin=1.5 * cm, leftMargin=1.5 * cm, rightMargin=1.5 * cm,
     )
 
-    story = [Paragraph(entity_display_name(entity_name), styles["Title"])]
+    story = [_para(entity_display_name(entity_name), styles["Title"])]
 
     reference_bits = [
         f"{humanize_field_name(key)}: {record[key]}"
@@ -675,7 +839,7 @@ def render_record_pdf(entity_name: str, record: dict, output_path):
         if not _is_empty(record.get(key))
     ]
     if reference_bits:
-        story.append(Paragraph(" | ".join(reference_bits), styles["Normal"]))
+        story.append(_para(" | ".join(reference_bits), styles["Normal"]))
     story.append(Spacer(1, 0.5 * cm))
 
     body = {k: v for k, v in record.items() if k not in ("_id", "__v", "createdAt", "updatedAt")}
@@ -686,25 +850,32 @@ def render_record_pdf(entity_name: str, record: dict, output_path):
 
 def generate_pdfs(data: dict, output_dir) -> dict:
     """For every entity in DOCUMENT_ENTITIES present in `data`, render one
-    PDF per record into output_dir/pdfs/<entity>/. Returns {entity: count}
-    for entities that actually produced any PDFs."""
+    PDF per record under output_dir/pdfs/, filed and named per PDF_NAMING.
+    Returns {entity: count} for entities that actually produced any PDFs."""
     output_dir = Path(output_dir)
     counts = {}
     for entity, records in data.items():
         if entity not in DOCUMENT_ENTITIES or not isinstance(records, list) or not records:
             continue
-        entity_dir = output_dir / "pdfs" / entity
-        entity_dir.mkdir(parents=True, exist_ok=True)
+        ref_field = pdf_naming(entity).ref_field
         made = 0
-        for i, record in enumerate(records):
+        for record in records:
             if not isinstance(record, dict):
                 continue
-            label = sanitize_filename(record_label(record, i))
-            pdf_path = entity_dir / f"{label}.pdf"
+            if ref_field and "." not in ref_field and ref_field in record:
+                # Show the same cleaned-up reference inside the PDF as in its
+                # filename, not e.g. a raw 2208261002.0 or a dropped leading 0.
+                ref = record_reference(entity, record, ref_field)
+                if ref:
+                    record = {**record, ref_field: ref}
+            folder, stem = pdf_path_for(entity, record)
+            pdf_dir = output_dir / "pdfs" / folder
+            pdf_dir.mkdir(parents=True, exist_ok=True)
+            pdf_path = pdf_dir / f"{stem}.pdf"
             n = 1
             while pdf_path.exists():
                 n += 1
-                pdf_path = entity_dir / f"{label}_{n}.pdf"
+                pdf_path = pdf_dir / f"{stem} ({n}).pdf"
             render_record_pdf(entity, record, pdf_path)
             made += 1
         if made:
@@ -865,19 +1036,26 @@ class App(TkinterDnD.Tk):
             # Cleaned once here (rather than only inside process_data())
             # since PDF generation needs the same unwrapped/redacted data.
             data = clean_data(data)
+            empty_count = 0
             if isinstance(data, dict):
+                empty_count = sum(1 for v in data.values() if isinstance(v, list) and not v)
                 pdf_data = {
                     k: v for k, v in data.items() if k in DOCUMENT_ENTITIES and isinstance(v, list)
                 }
                 tab_data = {k: v for k, v in data.items() if k not in pdf_data}
+                pdf_data = {k: v for k, v in pdf_data.items() if v}
             else:
                 pdf_data, tab_data = {}, data
 
             sheets = process_data(tab_data)
+            if not sheets and not pdf_data:
+                self._set_status("")
+                messagebox.showwarning(APP_TITLE, "No records were found in that export.")
+                return
 
-            if pdf_data:
-                # Document-shaped entities are in play, so the output is a
-                # folder (workbook + pdfs/), not a single xlsx file.
+            if pdf_data or len(sheets) > 1:
+                # More than one output file, so the output is a folder
+                # (spreadsheets/ + pdfs/), not a single xlsx file.
                 output_dir = filedialog.askdirectory(
                     title="Choose a folder to save the formatted output",
                     initialdir=str(default_dir),
@@ -886,8 +1064,7 @@ class App(TkinterDnD.Tk):
                     self._set_status("Cancelled.")
                     return
                 output_dir = Path(output_dir)
-                if sheets:
-                    save_as_excel(sheets, str(output_dir / default_name))
+                save_sheets_as_workbooks(sheets, output_dir / "spreadsheets")
                 pdf_counts = generate_pdfs(pdf_data, output_dir)
                 result_location = str(output_dir)
             else:
@@ -907,12 +1084,19 @@ class App(TkinterDnD.Tk):
 
             self._set_status(f"Done! Saved to:\n{result_location}")
             success_message = f"Success! Your formatted output is ready:\n\n{result_location}"
+            if len(sheets) > 1:
+                success_message += f"\n\n{len(sheets)} spreadsheet(s) created."
             if pdf_counts:
                 total_pdfs = sum(pdf_counts.values())
                 pdf_lines = "\n".join(
                     f"  - {entity_display_name(e)}: {c}" for e, c in pdf_counts.items()
                 )
                 success_message += f"\n\n{total_pdfs} PDF document(s) also created:\n{pdf_lines}"
+            if empty_count:
+                success_message += (
+                    f"\n\n{empty_count} categor{'y' if empty_count == 1 else 'ies'} "
+                    "had no records, so no file was made for them."
+                )
             if skipped:
                 shown = [f"  - {name}" for name, _ in skipped[:5]]
                 if len(skipped) > 5:

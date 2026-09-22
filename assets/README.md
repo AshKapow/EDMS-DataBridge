@@ -20,19 +20,17 @@ tool does, and doesn't need to double as an icon for it.
   via two cards and an arrow, but that much detail became an unreadable
   blob once actually shrunk to 16-32px (the sizes Windows renders this
   icon at) — the single document shape reads clearly at every size.
-- `banner.png` — the wide "Emergency Doctors Medical Service" lockup,
-  resized to 800x450. Not currently used anywhere (was tried at the top
-  of the README, but didn't look good there) - kept in case it's useful
-  later.
 - `source/` — everything needed to regenerate the above:
-  - `edms-icon-source.jpg` / `edms-banner-source.jpg` — the original,
-    unedited files EDMS provided (-> `logo.png` / `banner.png`).
+  - `edms-icon-source.jpg` — the original, unedited file EDMS provided
+    (-> `logo.png`; `generate_databridge_icon.py` also samples its
+    colors from it).
   - `generate_databridge_icon.py` — regenerates `logo.ico`.
-  - `databridge-icon-generated.png` — the 1024x1024 render that
-    `logo.ico` was built from, kept for reference/reuse.
 
-Regenerating `logo.png` or `banner.png` at a different size just needs
-Pillow:
+Everything in this folder is bundled into the `.exe` (`--add-data
+"assets;assets"`), so anything that's only for docs - e.g. the README's
+app screenshot - lives in `docs/` instead.
+
+Regenerating `logo.png` at a different size just needs Pillow:
 
 ```python
 from PIL import Image

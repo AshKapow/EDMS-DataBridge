@@ -40,11 +40,13 @@ directly.
    - Click **Upload ZIP File** or **Upload Folder** and pick it, or
    - Just drag the zip/folder straight onto the app window.
 
-**5. Choose where to save.** If your export contains simple, list-style
-data only, you'll be asked for a filename and get back a single Excel
-file. If it contains anything more document-like (see below), you'll
-instead be asked to choose a **folder** - the app will create an Excel
-file plus a set of neatly laid-out PDF documents inside it.
+   ![The EDMS DataBridge window, with Upload ZIP File and Upload Folder buttons](docs/screenshot.png)
+
+**5. Choose a folder to save into.** The app fills it with a
+`spreadsheets` folder and a `pdfs` folder (see below for what goes
+where). It's easiest to pick or create an empty folder for this.
+(If you upload a single JSON file with just one table in it, you'll be
+asked for a filename instead and get back one Excel file.)
 
 **6. That's it.** You'll get a confirmation showing what was created and
 where. If anything goes wrong, you'll see a plain-English error message;
@@ -54,30 +56,41 @@ app.
 
 ## What you'll get back
 
-Most of your data becomes an **Excel spreadsheet**, one tab per record
-type (staff, shifts, vehicles, training records, and so on).
+You choose a folder, and the app fills it with two folders:
 
-A smaller set of record types read much better as an actual document, so
-those instead become **one PDF per record**, sorted into folders:
+- **`spreadsheets/`** - one Excel file per record type (staff, shifts,
+  vehicles, training records, and so on), e.g. `spreadsheets/shifts.xlsx`.
+  Record types with no records at all in your export are skipped rather
+  than giving you an empty file.
+- **`pdfs/`** - record types that read much better as an actual document
+  (patient records, incident reports, completed checklists, ...) become
+  **one PDF per record** instead, filed by year and month with the date
+  first so they sort in date order, e.g.
+  `pdfs/CAD Incidents/2026/09 - September/2026-09-11 CAD 1109262001.pdf`.
+  Filenames never include a person's name - patient records are named
+  by their patient ID.
 
-| Record type | What it becomes |
+| Record type | Where its PDFs go |
 |---|---|
-| EPCR (electronic patient care record) | `pdfs/epcrs/` |
-| Paper PCR | `pdfs/paperpcrs/` |
-| Incident Report | `pdfs/incidents/` |
-| CAD Incident | `pdfs/cadincidents/` |
-| PTS Patient Record | `pdfs/ptspatients/` |
-| PTS Risk Assessment | `pdfs/ptsriskassessments/` |
-| Medical Assessment | `pdfs/medicalassessments/` |
-| Occupational Health Record | `pdfs/occupationalhealths/` |
-| Uninjured Person Report | `pdfs/uninjuredreports/` |
-| Imaging Request | `pdfs/imagingrequests/` |
-| Employee Appraisal | `pdfs/appraisals/` |
-| Employee Application | `pdfs/employeeapplications/` |
-| Speak Up Concern | `pdfs/speakupconcerns/` |
-| Complex Decision Record | `pdfs/complexdecisions/` |
-| Meeting Minutes | `pdfs/meetings/` |
-| PEA Action | `pdfs/peaactions/` |
+| EPCR (electronic patient care record) | `pdfs/ePCRs/` |
+| Incident Report | `pdfs/Incident Reports/` |
+| CAD Incident | `pdfs/CAD Incidents/` |
+| PTS Patient Record | `pdfs/PTS Patients/` (not split by date) |
+| PTS Risk Assessment | `pdfs/PTS Risk Assessments/` |
+| Employee Application | `pdfs/Employee Applications/` |
+| Speak Up Concern | `pdfs/Speak Up Concerns/` |
+| Meeting Minutes | `pdfs/Meetings/` |
+| Event Plan | `pdfs/Events/` |
+| Vehicle Daily Inspection | `pdfs/Vehicle Daily Inspections/` |
+| Vehicle Clean Record | `pdfs/Vehicle Cleans/` |
+| Vehicle Safety Check | `pdfs/Vehicle Safety Checks/` |
+| Audit | `pdfs/Audits/` |
+| Medicine Audit | `pdfs/Medicine Audits/` |
+| Patient Feedback | `pdfs/Patient Feedback/` |
+| Paper PCR, Medical Assessment, Occupational Health Record, Uninjured Person Report, Imaging Request, Employee Appraisal, Complex Decision Record, PEA Action | a folder named after the record type |
+
+A PDF whose date is missing goes in an `Undated` folder instead of a
+year/month one.
 
 This list may grow or change as the app is refined - see the open
 questions near the bottom of this README for anything still under review.
@@ -120,9 +133,9 @@ unwraps that into plain values before anything else touches it.
 
 Accepts a zip, a folder, or a single JSON file (button click or drag-and-
 drop). Each entity is classified as either tabular (flattened into its own
-Excel sheet - still a **generic** flatten, not bespoke per-entity column
-naming/ordering) or document-shaped (clinical/incident case records with
-genuine narrative content get one PDF per record instead, laid out with
+Excel file - still a **generic** flatten, not bespoke per-entity column
+naming/ordering) or document-shaped (case records with genuine narrative
+content, and completed forms/checklists, get one PDF per record instead, laid out with
 real sections and tables, branded with the EDMS logo on every page). See
 `DOCUMENT_ENTITIES` in `edms_databridge.py` for the current classification
 - reviewed against the actual generated output, not just guessed from
@@ -140,7 +153,7 @@ C#/.NET or Electron for speed of iteration given the author's background,
 and because a single unsigned `.exe` is enough for an internal tool — no
 installer needed.
 
-Output is a mix of Excel (`.xlsx`, one sheet per tabular entity) and PDF
+Output is a mix of Excel (`.xlsx`, one file per tabular entity) and PDF
 (one per record, for document-shaped entities) - see Status above and
 `DOCUMENT_ENTITIES` in `edms_databridge.py`.
 
@@ -251,6 +264,7 @@ make every PR permanently unmergeable without an admin override.
 ```
 ├── edms_databridge.py     # main app (GUI + processing logic)
 ├── assets/                # optional logo.png / logo.ico (see assets/README.md)
+├── docs/                  # README-only images (kept out of assets/, which ships in the exe)
 ├── tests/                 # pytest unit tests for the processing logic
 ├── requirements.txt       # runtime deps (bundled into the exe)
 ├── requirements-dev.txt   # runtime deps + pytest/ruff for local dev & CI
@@ -296,11 +310,15 @@ make every PR permanently unmergeable without an admin override.
 
 `DOCUMENT_ENTITIES` classification has now been reviewed against the real
 generated output (not just guessed from field names) - see the comments
-above that set for what changed and why. `vdis` and six "formal document"
+above that set for what changed and why. Six "formal document"
 entities (`policies`, `policydescriptions`, `sops`, `pgds`, `coshhsheets`,
 `statementofpurposes`) moved to tabular after inspection showed they're
 acknowledgment/version-tracking metadata, not narrative content - the real
 document text lives in an externally-linked file (see open question 2).
+Completed forms (`vdis`, `vehiclecleans`, `vehiclesafetychecks`, `audits`,
+`medicineaudits`), `patientfeedbacks` and `events` later moved the other
+way, to PDFs: their nested checklist answers flattened into cells holding
+whole lists, which a filled-in form layout reads far better as.
 A handful of entities with 0 records in the demo export (`paperpcrs`,
 `medicalassessments`, `occupationalhealths`, `uninjuredreports`,
 `imagingrequests`, `appraisals`, `complexdecisions`) are still unverified

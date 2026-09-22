@@ -22,10 +22,14 @@ from edms_databridge import (
     parse_dnd_filepaths,
     parse_version,
     process_data,
-    record_label,
+    pdf_path_for,
+    record_date,
+    record_reference,
+    render_record_pdf,
     redact_sensitive_fields,
     resource_path,
     sanitize_filename,
+    save_sheets_as_workbooks,
     unwrap_extended_json,
 )
 
@@ -106,6 +110,23 @@ def test_process_data_truncates_long_sheet_names_to_excel_limit():
     assert sheet_name == long_key[:31]
     assert len(sheet_name) == 31
 
+
+
+def test_process_data_skips_entities_with_no_records():
+    data = {"patients": [{"id": 1}], "appraisals": []}
+    sheets = process_data(data)
+    assert set(sheets.keys()) == {"patients"}
+
+
+def test_save_sheets_as_workbooks_writes_one_file_per_sheet(tmp_path):
+    import pandas as pd
+
+    sheets = process_data({"patients": [{"id": 1}], "shifts": [{"id": 2}, {"id": 3}]})
+    paths = save_sheets_as_workbooks(sheets, tmp_path / "spreadsheets")
+    assert sorted(p.name for p in paths) == ["patients.xlsx", "shifts.xlsx"]
+    workbook = pd.read_excel(tmp_path / "spreadsheets" / "shifts.xlsx", sheet_name=None)
+    assert list(workbook.keys()) == ["shifts"]
+    assert len(workbook["shifts"]) == 2
 
 @pytest.mark.parametrize("bad_data", ["just a string", 42, None])
 def test_process_data_rejects_non_list_non_dict_input(bad_data):
@@ -327,62 +348,113 @@ def test_sanitize_filename_falls_back_when_empty():
     assert sanitize_filename("   ") == "record"
 
 
-def test_record_label_prefers_a_number_field():
-    record = {"_id": "abc", "epcrNumber": "0101", "name": "ignored"}
-    assert record_label(record, 0) == "0101"
+def test_pdf_path_for_files_by_year_and_month_with_date_first():
+    record = {"incidentNumber": "1009", "incidentDate": "2026-07-11T13:20:00Z"}
+    folder, stem = pdf_path_for("incidents", record)
+    assert folder == Path("Incident Reports") / "2026" / "07 - July"
+    assert stem == "2026-07-11 Incident 1009"
 
 
-def test_record_label_handles_a_number_field_that_is_an_int():
-    # Regression: cadincidents.incidentNumber is a plain int, not a
-    # string - the original suffix check required isinstance(value, str)
-    # and silently fell through to the _id fallback instead.
-    record = {"_id": "abc", "incidentNumber": 1109262001}
-    assert record_label(record, 0) == "1109262001"
+def test_pdf_path_for_uses_a_nested_date_field():
+    record = {"epcrNumber": "0101", "incident": {"incidentDate": "2026-08-21T14:00:00Z"}}
+    folder, stem = pdf_path_for("epcrs", record)
+    assert folder == Path("ePCRs") / "2026" / "08 - August"
+    assert stem == "2026-08-21 ePCR 0101"
 
 
-def test_record_label_matches_compound_title_field():
-    record = {"_id": "abc", "policyTitle": "Fire Safety Policy"}
-    assert record_label(record, 0) == "Fire Safety Policy"
+def test_pdf_path_for_undated_record_goes_in_undated_folder():
+    folder, stem = pdf_path_for("incidents", {"incidentNumber": "1009"})
+    assert folder == Path("Incident Reports") / "Undated"
+    assert stem == "Incident 1009"
 
 
-def test_record_label_falls_back_to_demographics_name():
-    record = {"_id": "abc", "demographics": {"firstName": "Jane", "lastName": "Doe"}}
-    assert record_label(record, 0) == "Jane Doe"
+def test_pdf_path_for_patients_is_flat_and_never_uses_the_name():
+    record = {"patientID": "PKX7M2R4A", "demographics": {"firstName": "Jane", "lastName": "Doe"}}
+    folder, stem = pdf_path_for("ptspatients", record)
+    assert folder == Path("PTS Patients")
+    assert stem == "PTS Patient PKX7M2R4A"
 
 
-def test_record_label_falls_back_to_id_then_index():
-    assert record_label({"_id": "abc123"}, 0) == "abc123"
-    assert record_label({}, 4) == "record_5"
+def test_pdf_path_for_unknown_document_entity_falls_back_to_created_at():
+    folder, stem = pdf_path_for("paperpcrs", {"createdAt": "2026-01-05T10:00:00Z"})
+    assert folder == Path("Paper PCR") / "2026" / "01 - January"
+    assert stem == "2026-01-05 Paper PCR"
+
+
+def test_record_date_converts_utc_to_local_time():
+    parsed = record_date({"d": "2026-09-11T08:21:00Z"}, "d")
+    assert parsed.utcoffset() is not None
+    assert record_date({"d": "not a date"}, "d") is None
+    assert record_date({}, "d") is None
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        (1109262001, "1109262001"),
+        (2208261002.0, "2208261002"),  # exported as 2.208261002E+09
+        (409261004, "0409261004"),  # DDMMYY lost its leading zero
+        ("1109262001", "1109262001"),
+    ],
+)
+def test_record_reference_cleans_up_cad_incident_numbers(raw, expected):
+    assert record_reference("cadincidents", {"incidentNumber": raw}, "incidentNumber") == expected
+
+
+def test_record_reference_only_pads_cad_numbers():
+    assert record_reference("incidents", {"incidentNumber": 1009}, "incidentNumber") == "1009"
+    assert record_reference("incidents", {"incidentNumber": ""}, "incidentNumber") is None
 
 
 def test_generate_pdfs_writes_one_pdf_per_record(tmp_path):
     data = {
         "epcrs": [
-            {"_id": "1", "epcrNumber": "E001", "demographics": {"firstName": "A"}},
-            {"_id": "2", "epcrNumber": "E002", "demographics": {"firstName": "B"}},
+            {"epcrNumber": "E001", "incident": {"incidentDate": "2026-08-21T12:00:00Z"}},
+            {"epcrNumber": "E002", "incident": {"incidentDate": "2026-08-22T12:00:00Z"}},
         ],
         "employees": [{"_id": "3", "name": "Not a document entity"}],
     }
     counts = generate_pdfs(data, tmp_path)
     assert counts == {"epcrs": 2}
-    pdf_dir = tmp_path / "pdfs" / "epcrs"
+    pdf_dir = tmp_path / "pdfs" / "ePCRs" / "2026" / "08 - August"
     pdfs = sorted(pdf_dir.glob("*.pdf"))
-    assert [p.name for p in pdfs] == ["E001.pdf", "E002.pdf"]
+    assert [p.name for p in pdfs] == ["2026-08-21 ePCR E001.pdf", "2026-08-22 ePCR E002.pdf"]
     assert pdfs[0].read_bytes().startswith(b"%PDF")
     assert not (tmp_path / "pdfs" / "employees").exists()
 
 
 def test_generate_pdfs_dedupes_filename_collisions(tmp_path):
     data = {
-        "epcrs": [
-            {"_id": "1", "title": "Duplicate"},
-            {"_id": "2", "title": "Duplicate"},
+        "audits": [
+            {"_id": "1", "date": "2026-09-10T06:30:00Z"},
+            {"_id": "2", "date": "2026-09-10T09:00:00Z"},
         ]
     }
     generate_pdfs(data, tmp_path)
-    pdf_dir = tmp_path / "pdfs" / "epcrs"
+    pdf_dir = tmp_path / "pdfs" / "Audits" / "2026" / "09 - September"
     names = sorted(p.name for p in pdf_dir.glob("*.pdf"))
-    assert names == ["Duplicate.pdf", "Duplicate_2.pdf"]
+    assert names == ["2026-09-10 Audit (2).pdf", "2026-09-10 Audit.pdf"]
+
+
+def test_render_record_pdf_treats_record_text_as_literal_not_markup(tmp_path):
+    # Regression: crewvaults.content is raw HTML, and reportlab parses
+    # Paragraph text as markup - an unclosed tag used to crash the run.
+    record = {"content": "<h2>Draw up</h2><ul><li>x <b>bold", "note": "BP < 90 & falling"}
+    render_record_pdf("crewvaults", record, tmp_path / "out.pdf")
+    assert (tmp_path / "out.pdf").read_bytes().startswith(b"%PDF")
+
+
+def test_render_record_pdf_lays_out_a_keyed_checklist(tmp_path):
+    record = {
+        "answers": {
+            "Under the Bonnet": {
+                "Engine Oil Level": {"safe": True, "advised": False, "comments": ""},
+                "Brake Fluid Level": {"safe": False, "advised": True, "comments": "Low"},
+            }
+        }
+    }
+    render_record_pdf("vehiclesafetychecks", record, tmp_path / "out.pdf")
+    assert (tmp_path / "out.pdf").read_bytes().startswith(b"%PDF")
 
 
 def test_log_error_writes_traceback_to_appdata(tmp_path, monkeypatch):
@@ -481,12 +553,25 @@ def test_entity_display_name_falls_back_to_humanize():
     assert entity_display_name("someunmappedentity") == "Someunmappedentity"
 
 
-def test_vdis_is_not_a_document_entity():
-    # Regression: vdis was originally an unconfirmed guess in
-    # DOCUMENT_ENTITIES, but it's actually Vehicle Daily Inspection - a
-    # routine checklist, not a narrative case record - confirmed via
-    # research and moved to the tabular (Excel) side.
-    assert "vdis" not in DOCUMENT_ENTITIES
+def test_completed_forms_are_document_entities():
+    # vdis was once moved to the tabular side as "a routine checklist, not
+    # a narrative record" - but its checklist answers flatten into cells
+    # stuffed with whole lists, so completed forms are PDFs now: one
+    # readable filled-in form per record.
+    for entity in ("vdis", "vehiclecleans", "vehiclesafetychecks", "audits", "medicineaudits"):
+        assert entity in DOCUMENT_ENTITIES
+
+
+def test_every_document_entity_has_pdf_naming():
+    from edms_databridge import PDF_NAMING
+
+    # Entities with 0 records in the demo export fall back to a generic
+    # createdAt naming; every entity with real data has a deliberate one.
+    unverified = {
+        "paperpcrs", "medicalassessments", "occupationalhealths", "uninjuredreports",
+        "imagingrequests", "appraisals", "complexdecisions", "peaactions",
+    }
+    assert DOCUMENT_ENTITIES - unverified <= set(PDF_NAMING)
 
 
 def test_every_document_entity_has_a_display_name():
